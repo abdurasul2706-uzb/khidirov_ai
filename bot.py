@@ -1,14 +1,15 @@
 import asyncio
 import logging
-import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from google import genai
+from google.genai import types as genai_types
 
 BOT_TOKEN = "8985071741:AAHZ2palM1JyEdwUSgrvlxYDsctQyw0DLb0"
-GEMINI_API_KEY = "AQ.Ab8RN6JwGzmkhUod2mQh6Wnw1F7v0vHAp21IOpktgFUciWpPKg"
-CHANNEL_USERNAME = "@Karnay_uzb"  # Kanalingiz usernamesi
+# Google AI Studio bergan AQ.Ab8RN6... kalitingizni shu yerga qo'ying:
+GEMINI_API_KEY = "AQ.Ab8RN6IyN9WYUAg0fAVQOomTAqsIDwGX855Nd3CwHFy3TzarXA" 
+CHANNEL_USERNAME = "@Karnay_uzb"
 
 SYSTEM_INSTRUCTION = (
     "Siz o'zbek tilida muloqot qiluvchi intellektual va samimiy AI yordamchisiz. "
@@ -19,7 +20,14 @@ logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Google GenAI mijozini HTTP header orqali avtorizatsiya qilish sozlamasi
+ai_client = genai.Client(
+    api_key=GEMINI_API_KEY,
+    http_options=genai_types.HttpOptions(
+        headers={"x-goog-api-key": GEMINI_API_KEY}
+    )
+)
 
 async def check_subscription(user_id: int) -> bool:
     try:
