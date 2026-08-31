@@ -90,7 +90,7 @@ async def ai_photo_handler(message: types.Message):
         prompt = message.caption if message.caption else "Ushbu rasmni batafsil tahlil qilib bering."
 
         response = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-1.5-flash",
             contents=[prompt, image],
             config={"system_instruction": SYSTEM_INSTRUCTION}
         )
