@@ -65,7 +65,7 @@ async def ai_text_handler(message: types.Message):
     typing_msg = await message.answer("🤔 Fikr yuritilmoqda...")
     try:
         response = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-1.5-flash",
             contents=message.text,
             config={"system_instruction": SYSTEM_INSTRUCTION}
         )
