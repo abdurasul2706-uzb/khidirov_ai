@@ -8,7 +8,9 @@ from google.genai import types as genai_types
 
 BOT_TOKEN = "8985071741:AAHZ2palM1JyEdwUSgrvlxYDsctQyw0DLb0"
 # Google AI Studio bergan AQ.Ab8RN6... kalitingizni shu yerga qo'ying:
-GEMINI_API_KEY = "AQ.Ab8RN6IyN9WYUAg0fAVQOomTAqsIDwGX855Nd3CwHFy3TzarXA" 
+ import os
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 CHANNEL_USERNAME = "@Karnay_uzb"
 
 SYSTEM_INSTRUCTION = (
