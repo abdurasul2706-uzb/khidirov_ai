@@ -16,27 +16,18 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Yangi rasmiy Google GenAI klienti
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_NAME = "gemini-3.6-flash"
-
-SYSTEM_INSTRUCTION = (
-    "Siz Telegram'dagi eng aqlli, bilimdon va samimiy sun'iy intellekt yordamchisiz. "
-    "Foydalanuvchi qaysi tilda yozsa (o'zbekcha lotin/kirill, ruscha, inglizcha), "
-    "aynan o'sha tilda o'ta mukammal, mantiqiy va samimiy javob bering."
-)
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
+
+MODEL_NAME = "gemini-3.6-flash"
+SYSTEM_INSTRUCTION = "Siz o'ta aqlli va bilimdon yordamchisiz. Foydalanuvchi savollariga o'zbek tilida aniq, ravon va londa javob bering."
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
-    def do_HEAD(self):
-        self.send_response(200)
-        self.end_headers()
 
 def run_health_check_server():
     port = int(os.getenv("PORT", 10000))
@@ -45,7 +36,7 @@ def run_health_check_server():
 
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
-    await message.answer("Assalomu alaykum! Men sizning universal AI yordamchingizman. Savol, rasm yoki ovozli xabaringizni yuboring!")
+    await message.answer("Salom! Men sizning aqlli AI yordamchingizman. Menga matn, rasm yoki ovozli xabar yuborishingiz mumkin!")
 
 @dp.message(F.text)
 async def text_handler(message: types.Message):
@@ -62,11 +53,10 @@ async def text_handler(message: types.Message):
                 )
             )
         )
-        text_res = response.text if response.text else "Javob olishda muammo bo'ldi."
-        await typing_msg.edit_text(text_res, parse_mode=None)
+        await typing_msg.edit_text(response.text if response.text else "Javob olishda muammo bo'ldi.")
     except Exception as e:
-        logging.error(f"Matn xatosi: {e}")
-        await typing_msg.edit_text(f"Xatolik yuz berdi: {str(e)[:150]}", parse_mode=None)
+        logging.error(f"Matn xatoligi: {e}")
+        await typing_msg.edit_text("Kechirasiz, javob tayyorlashda xatolik yuz berdi.")
 
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
@@ -76,7 +66,8 @@ async def photo_handler(message: types.Message):
         file_info = await bot.get_file(photo.file_id)
         downloaded_file = await bot.download_file(file_info.file_path)
         
-        image = Image.open(BytesIO(downloaded_file.read()))
+        image_bytes = downloaded_file.read()
+        image = Image.open(BytesIO(image_bytes))
         prompt = message.caption if message.caption else "Ushbu rasmni batafsil tahlil qilib ber."
         
         loop = asyncio.get_running_loop()
@@ -90,25 +81,28 @@ async def photo_handler(message: types.Message):
                 )
             )
         )
-        text_res = response.text if response.text else "Rasm bo'yicha javob olinmadi."
-        await typing_msg.edit_text(text_res, parse_mode=None)
+        await typing_msg.edit_text(response.text if response.text else "Rasmni tahlil qilib bo'lmadi.")
     except Exception as e:
-        logging.error(f"Rasm xatosi: {e}")
-        await typing_msg.edit_text(f"Rasm xatoligi: {str(e)[:150]}", parse_mode=None)
+        logging.error(f"Rasm xatoligi: {e}")
+        await typing_msg.edit_text("Rasmni tahlil qilishda xatolik yuz berdi.")
 
 @dp.message(F.voice)
 async def voice_handler(message: types.Message):
-    typing_msg = await message.answer("🎙 Ovozli xabar eshitilmoqda...")
+    typing_msg = await message.answer("🎙 Ovozli xabar eshitilmoqda va tahlil qilinmoqda...")
     try:
         voice = message.voice
         file_info = await bot.get_file(voice.file_id)
         downloaded_file = await bot.download_file(file_info.file_path)
         
+        audio_bytes = downloaded_file.read()
+        
+        # Audio ma'lumotni Gemini API ga part sifatida uzatish
         audio_part = genai_types.Part.from_bytes(
-            data=downloaded_file.read(),
+            data=audio_bytes,
             mime_type="audio/ogg"
         )
-        prompt = "Ushbu ovozli xabardagi gaplarni tinglab, to'liq va mukammal javob ber."
+        
+        prompt = "Ushbu ovozli xabarda nima deyilganini tushunib, unga batafsil javob ber."
         
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
@@ -121,15 +115,14 @@ async def voice_handler(message: types.Message):
                 )
             )
         )
-        text_res = response.text if response.text else "Ovoz bo'yicha javob olinmadi."
-        await typing_msg.edit_text(text_res, parse_mode=None)
+        await typing_msg.edit_text(response.text if response.text else "Ovozli xabarni tushunishda muammo bo'ldi.")
     except Exception as e:
-        logging.error(f"Ovoz xatosi: {e}")
-        await typing_msg.edit_text(f"Ovoz xatoligi: {str(e)[:150]}", parse_mode=None)
+        logging.error(f"Ovoz xatoligi: {e}")
+        await typing_msg.edit_text("Ovozli xabarni tahlil qilishda xatolik yuz berdi.")
 
 async def main():
     Thread(target=run_health_check_server, daemon=True).start()
-    logging.info("Bot ishga tushdi...")
+    logging.info("khidirov_ai ishga tushdi...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
