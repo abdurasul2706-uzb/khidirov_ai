@@ -7,8 +7,7 @@ from io import BytesIO
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
-from google import genai
-from google.genai import types as genai_types
+import google.generativeai as genai
 from PIL import Image
 
 logging.basicConfig(level=logging.INFO)
@@ -16,17 +15,21 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# Google Gemini sozlasi
+genai.configure(api_key=GEMINI_API_KEY)
+
+# Rasmiy va barqaror multimodal model
+model = genai.GenerativeModel(
+    model_name="gemini-3.6-flash",
+    system_instruction=(
+        "Siz dunyodagi eng aqlli, bilimdon va tezkor AI yordamchisiz. "
+        "Foydalanuvchining har qanday tildagi (lotin, kirill, rus, ingliz) "
+        "savollariga aniq, to'liq va mantiqiy javob bering."
+    )
+)
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
-
-MODEL_NAME = "gemini-3.6-flash"
-SYSTEM_INSTRUCTION = (
-    "Siz o'ta aqlli, bilimdon va tezkor AI yordamchisiz. "
-    "Foydalanuvchining har qanday tildagi (lotin o'zbekcha, kirill o'zbekcha, ruscha va h.k.) "
-    "savollariga o'sha tilda mukammal, aniq va chuqur mantiqiy javob bering. "
-    "Rasmlarni o'ta aniqlik bilan tahlil qiling va ovozli xabarlardagi fikrni to'liq tushunib javob qaytaring."
-)
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -56,19 +59,13 @@ async def text_handler(message: types.Message):
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: ai_client.models.generate_content(
-                model=MODEL_NAME,
-                contents=message.text,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION
-                )
-            )
+            lambda: model.generate_content(message.text)
         )
         text_res = response.text if response.text else "Javob olishda muammo bo'ldi."
         await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
         logging.error(f"Matn xatoligi: {e}")
-        await typing_msg.edit_text("Kechirasiz, javob tayyorlashda xatolik yuz berdi.")
+        await typing_msg.edit_text(f"Xatolik yuz berdi: {e}")
 
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
@@ -84,19 +81,13 @@ async def photo_handler(message: types.Message):
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: ai_client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[prompt, image],
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION
-                )
-            )
+            lambda: model.generate_content([prompt, image])
         )
         text_res = response.text if response.text else "Rasmni tahlil qilib bo'lmadi."
         await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
         logging.error(f"Rasm xatoligi: {e}")
-        await typing_msg.edit_text("Rasmni tahlil qilishda xatolik yuz berdi.")
+        await typing_msg.edit_text(f"Rasm tahlilida xatolik: {e}")
 
 @dp.message(F.voice)
 async def voice_handler(message: types.Message):
@@ -106,28 +97,22 @@ async def voice_handler(message: types.Message):
         file_info = await bot.get_file(voice.file_id)
         downloaded_file = await bot.download_file(file_info.file_path)
         
-        audio_part = genai_types.Part.from_bytes(
-            data=downloaded_file.read(),
-            mime_type="audio/ogg"
-        )
-        prompt = "Ushbu ovozli xabarni diqqat bilan eshitib, unda aytilgan savol yoki fikrga batafsil javob ber."
+        audio_data = {
+            "mime_type": "audio/ogg",
+            "data": downloaded_file.read()
+        }
+        prompt = "Ushbu ovozli xabarni eshitib, undagi savolga batafsil javob ber."
         
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: ai_client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[prompt, audio_part],
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION
-                )
-            )
+            lambda: model.generate_content([prompt, audio_data])
         )
         text_res = response.text if response.text else "Ovozli xabarni tushunishda muammo bo'ldi."
         await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
         logging.error(f"Ovoz xatoligi: {e}")
-        await typing_msg.edit_text("Ovozli xabarni tahlil qilishda xatolik yuz berdi.")
+        await typing_msg.edit_text(f"Ovoz tahlilida xatolik: {e}")
 
 async def main():
     Thread(target=run_health_check_server, daemon=True).start()
