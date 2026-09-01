@@ -14,7 +14,6 @@ from aiogram.filters import Command, CommandStart
 
 from google import genai
 from google.genai import types as genai_types
-from google.genai import errors as genai_errors
 
 
 # ============================================================
@@ -35,7 +34,7 @@ logger = logging.getLogger("telegram-ai")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-RAW_KEYS = os.getenv("GEMINI_API_KEY", "")
+RAW_KEYS = os.getenv("GEMINI_API_KEY", "").strip()
 
 API_KEYS = [
     key.strip()
@@ -43,7 +42,7 @@ API_KEYS = [
     if key.strip()
 ]
 
-PRIMARY_MODEL = os.getenv(
+MODEL_NAME = os.getenv(
     "GEMINI_MODEL",
     "gemini-3.7-flash",
 ).strip()
@@ -87,33 +86,6 @@ except ValueError:
 
 
 # ============================================================
-# MODEL FALLBACK
-# ============================================================
-
-# Tartib:
-#
-# 3.7 = asosiy, eng kuchli
-# 3.6 = kuchli fallback
-# 3.5 = yana bir fallback
-# 3.5 Flash-Lite = tez va arzonroq fallback
-#
-# Rasm/audio ham kerak bo'lgani uchun fallback modellar
-# multimodal bo'lishi muhim.
-
-MODEL_FALLBACKS = [
-    PRIMARY_MODEL,
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-]
-
-# Duplicate model nomlarini olib tashlaymiz.
-MODEL_FALLBACKS = list(
-    dict.fromkeys(MODEL_FALLBACKS)
-)
-
-
-# ============================================================
 # GEMINI CLIENTS
 # ============================================================
 
@@ -124,121 +96,138 @@ clients = [
 
 
 # ============================================================
-# AI PERSONALITY
+# AI SYSTEM INSTRUCTION
 # ============================================================
 
 SYSTEM_INSTRUCTION = """
 Siz Telegram ichidagi universal va yuqori darajadagi AI yordamchisiz.
 
-Sizning asosiy maqsadingiz:
-foydalanuvchiga imkon qadar aniq, foydali, aqlli,
-mantiqiy, samimiy va amaliy yordam berish.
+Sizning asosiy maqsadingiz foydalanuvchining muammosini
+imkon qadar oxirigacha hal qilish.
 
-MUHIM QOIDALAR:
+JAVOB SIFATI ENG MUHIM.
 
 1. TIL
 
-Foydalanuvchi qaysi tilda murojaat qilsa,
-asosan o'sha tilda javob bering.
+Foydalanuvchi qaysi tilda yozsa, o'sha tilda javob bering.
 
-O'zbek tilida lotin yoki kirill yozilsa,
-mos ravishda javob bering.
+O'zbek lotin → o'zbek lotin.
+O'zbek kirill → o'zbek kirill.
+Ruscha → ruscha.
+Inglizcha → inglizcha.
 
-Ruscha savolga ruscha.
-Inglizcha savolga inglizcha.
-
-Aralash tilda yozilsa,
-foydalanuvchining asosiy tilini aniqlab,
-shu tilda javob bering.
+Aralash tilda yozilsa, asosiy tilni aniqlang.
 
 
-2. ANIQLIK
+2. MANTIQ VA REASONING
+
+Murakkab savollarni shoshmasdan tahlil qiling.
+
+Matematika, mantiq, dasturlash, texnika va murakkab
+muammolarda javobni ichki reasoning orqali tekshiring.
+
+Foydalanuvchiga keraksiz ichki reasoning jarayonini
+ochib bermang.
+
+Faqat foydali xulosa va tushuntirishni bering.
+
+
+3. ANIQLIK
 
 Bilmagan narsangizni uydirmang.
 
-Noaniq ma'lumotni aniq fakt sifatida ko'rsatmang.
+Noaniq ma'lumotni fakt sifatida ko'rsatmang.
 
-Agar savolda yetarli ma'lumot bo'lmasa,
-kerakli aniqlashtirishni so'rang.
-
-
-3. MANTIQ
-
-Murakkab savollarni bosqichma-bosqich tahlil qiling.
-
-Matematika, mantiq, dasturlash va texnik savollarda
-javobni tekshirishga harakat qiling.
+Yetarli ma'lumot bo'lmasa, zarur bo'lsa aniqlashtiruvchi
+savol bering.
 
 
-4. JAVOB SIFATI
+4. JAVOB USLUBI
 
 Javoblar:
 
+- aniq
+- aqlli
+- tabiiy
 - tushunarli
-- mantiqiy
+- amaliy
 - tartibli
-- foydali
-- keraksiz takrorsiz
 
 bo'lsin.
 
-Kerak bo'lsa:
+Keraksiz uzunlikdan qoching.
 
-sarlavhalar,
-ro'yxatlar,
-jadval,
-misollar,
-kod bloklaridan foydalaning.
+Murakkab masalalarda esa yetarlicha batafsil tushuntiring.
 
 
-5. RASM
+5. KOD
 
-Rasm yuborilsa, uni diqqat bilan tahlil qiling.
+Dasturlash savollarida ishlaydigan kod yozing.
 
-Undagi matn, obyektlar, diagrammalar, grafiklar
-va kontekstni imkon qadar tushuning.
+Xato bo'lsa:
+- sababini aniqlang
+- qaysi joy xato ekanini ayting
+- to'g'ri variantni ko'rsating
 
-Foydalanuvchi savol bergan bo'lsa,
-aynan shu savolga javob bering.
+Foydalanuvchi kod yuborsa, kodni diqqat bilan tahlil qiling.
 
 
-6. OVOZ
+6. RASM
+
+Rasm yuborilsa:
+
+- rasmni diqqat bilan ko'ring
+- matnni o'qing
+- obyektlarni aniqlang
+- diagramma/grafikni tushuning
+- masala yoki savol bo'lsa yeching
+
+Foydalanuvchi caption yozgan bo'lsa,
+aynan shu topshiriqqa e'tibor bering.
+
+
+7. OVOZ
 
 Ovozli xabar yuborilsa:
 
-- undagi nutqni tushuning
-- savol yoki topshiriqni aniqlang
-- keyin foydalanuvchi tilida javob bering
+- nutq mazmunini tushuning
+- foydalanuvchining topshirig'ini aniqlang
+- faqat transkripsiya bilan cheklanmay,
+  imkon qadar topshiriqni bajaring
+- javobni foydalanuvchi tilida bering
 
 
-7. KOD
+8. SUHBAT KONTEKSTI
 
-Dasturlash savollarida ishlaydigan,
-aniq va xavfsiz kod yozing.
+Oldingi suhbatdagi ma'lumotlardan foydalaning.
 
-Kod kerak bo'lsa, to'liq misol keltiring.
-
-Xatolarni ham tushuntiring.
-
-
-8. O'QITISH
-
-Talaba yoki yangi o'rganuvchi savol bersa,
-murakkab narsani sodda qilib tushuntiring.
+Foydalanuvchi "u", "bu", "avvalgi", "o'sha" kabi
+iboralarni ishlatsa, oldingi kontekstni hisobga oling.
 
 
 9. SAMIMIYLIK
 
-Foydalanuvchi bilan insoniy,
-hurmatli va samimiy muloqot qiling.
+Insoniy, tabiiy va hurmatli muloqot qiling.
 
-Lekin ortiqcha maqtov yoki sun'iy gaplardan qoching.
+Sun'iy maqtovlarni ko'paytirmang.
 
 
-10. MUHIM
+10. MUAMMONI HAL QILISH
 
-Sizning maqsadingiz shunchaki javob berish emas,
-foydalanuvchining muammosini imkon qadar oxirigacha hal qilish.
+Shunchaki javob berish emas,
+foydalanuvchiga amalda yordam berish asosiy maqsad.
+
+
+11. TELEGRAM FORMAT
+
+Telegramda o'qishga qulay formatdan foydalaning:
+
+- qisqa sarlavhalar
+- punktlar
+- raqamlangan ro'yxatlar
+- kod bloklari
+
+Kerak bo'lmasa haddan tashqari formatlamang.
 """
 
 
@@ -304,18 +293,20 @@ def build_prompt(
     )
 
     return f"""
-Quyida ushbu foydalanuvchi bilan oldingi suhbat tarixi bor.
+OLDINGI SUHBAT KONTEKSTI:
 
---- OLDINGI SUHBAT ---
 {history_text}
---- SUHBAT OXIRI ---
 
-Yangi xabar:
+---
+
+YANGI FOYDALANUVCHI XABARI:
 
 {current_message}
 
-Oldingi suhbat kontekstini hisobga olib,
-yangi xabarga javob bering.
+---
+
+Oldingi suhbatni hisobga olib,
+yangi xabarga tabiiy va foydali javob bering.
 """
 
 
@@ -370,39 +361,59 @@ def register_user(
     else:
 
         users[user_id]["name"] = (
-            user.full_name or users[user_id]["name"]
+            user.full_name
+            or users[user_id]["name"]
         )
 
         users[user_id]["username"] = (
-            user.username or users[user_id]["username"]
+            user.username
+            or users[user_id]["username"]
         )
 
         users[user_id]["last_seen"] = now
 
 
 # ============================================================
-# ERROR CLASSIFICATION
+# GEMINI ERROR TYPE
 # ============================================================
 
-def classify_gemini_error(
+def get_error_type(
     error: Exception,
 ) -> str:
 
     text = str(error).lower()
 
-    if "429" in text or "resource_exhausted" in text:
+    if (
+        "429" in text
+        or "resource_exhausted" in text
+        or "quota" in text
+    ):
         return "quota"
 
-    if "503" in text or "unavailable" in text:
+    if (
+        "503" in text
+        or "unavailable" in text
+        or "service unavailable" in text
+    ):
         return "temporary"
 
-    if "401" in text or "unauthenticated" in text:
+    if (
+        "401" in text
+        or "unauthenticated" in text
+        or "invalid api key" in text
+    ):
         return "auth"
 
-    if "403" in text or "permission" in text:
+    if (
+        "403" in text
+        or "permission denied" in text
+    ):
         return "permission"
 
-    if "404" in text or "not found" in text:
+    if (
+        "404" in text
+        or "not found" in text
+    ):
         return "model"
 
     return "unknown"
@@ -418,7 +429,8 @@ def generate_with_gemini(
 
     last_error = None
 
-    # API keylar ichida tasodifiy boshlaymiz.
+    # Bir nechta API key bo'lsa,
+    # tasodifiy tartibda ishlatamiz.
     client_order = list(
         range(len(clients))
     )
@@ -427,174 +439,157 @@ def generate_with_gemini(
         client_order
     )
 
-    for model_index, model_name in enumerate(
-        MODEL_FALLBACKS
-    ):
+    for client_index in client_order:
 
-        logger.info(
-            "Gemini model candidate %s/%s: %s",
-            model_index + 1,
-            len(MODEL_FALLBACKS),
-            model_name,
-        )
+        client = clients[client_index]
 
-        for client_index in client_order:
+        # 503 kabi vaqtinchalik xatolarda retry.
+        # 429 quota bo'lsa retry qilib vaqtni bekorga sarflamaymiz.
+        for attempt in range(1, 4):
 
-            client = clients[client_index]
+            try:
 
-            # 503 uchun ko'pi bilan 2 retry.
-            # 429 quota bo'lsa bekorga 3 marta kutmaymiz.
-            max_attempts = 2
+                logger.info(
+                    "Gemini request | model=%s | client=%s | attempt=%s",
+                    MODEL_NAME,
+                    client_index + 1,
+                    attempt,
+                )
 
-            for attempt in range(
-                1,
-                max_attempts + 1,
-            ):
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=contents,
+                    config=genai_types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        thinking_config=genai_types.ThinkingConfig(
+                            thinking_level=THINKING_LEVEL
+                        ),
+                    ),
+                )
 
-                try:
+                if response and response.text:
 
                     logger.info(
-                        "Gemini request | model=%s | client=%s | attempt=%s",
-                        model_name,
+                        "Gemini success | model=%s | client=%s",
+                        MODEL_NAME,
                         client_index + 1,
-                        attempt,
                     )
 
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=contents,
-                        config=genai_types.GenerateContentConfig(
-                            system_instruction=SYSTEM_INSTRUCTION,
-                            thinking_config=genai_types.ThinkingConfig(
-                                thinking_level=THINKING_LEVEL
-                            ),
-                        ),
+                    return response
+
+                raise RuntimeError(
+                    "Gemini bo'sh javob qaytardi."
+                )
+
+            except Exception as error:
+
+                last_error = error
+
+                error_type = get_error_type(
+                    error
+                )
+
+                logger.error(
+                    "Gemini error | model=%s | client=%s | attempt=%s | type=%s | %s",
+                    MODEL_NAME,
+                    client_index + 1,
+                    attempt,
+                    error_type,
+                    error,
+                )
+
+                # ================================================
+                # QUOTA
+                # ================================================
+
+                if error_type == "quota":
+
+                    # Shu key/project uchun quota tugagan.
+                    # Bir xil projectdagi boshqa key quota'ni
+                    # ko'paytirmaydi, shuning uchun keyingi key
+                    # bo'lsa tekshirib ko'ramiz, lekin retry qilmaymiz.
+
+                    logger.warning(
+                        "Gemini quota exceeded."
                     )
 
-                    if response and response.text:
+                    break
 
-                        logger.info(
-                            "Gemini success | model=%s | client=%s",
-                            model_name,
-                            client_index + 1,
-                        )
 
-                        return response
+                # ================================================
+                # AUTH / PERMISSION
+                # ================================================
 
-                    raise RuntimeError(
-                        "Gemini bo'sh javob qaytardi."
+                if error_type in (
+                    "auth",
+                    "permission",
+                ):
+
+                    logger.warning(
+                        "Gemini API key permission/auth error | client=%s",
+                        client_index + 1,
                     )
 
-                except Exception as error:
+                    break
 
-                    last_error = error
 
-                    error_type = classify_gemini_error(
-                        error
-                    )
+                # ================================================
+                # MODEL ERROR
+                # ================================================
+
+                if error_type == "model":
 
                     logger.error(
-                        "Gemini error | model=%s | client=%s | attempt=%s | type=%s | error=%s",
-                        model_name,
-                        client_index + 1,
-                        attempt,
-                        error_type,
-                        error,
+                        "Gemini model error: %s",
+                        MODEL_NAME,
                     )
 
-                    # ------------------------------------------------
-                    # QUOTA
-                    # ------------------------------------------------
+                    break
 
-                    if error_type == "quota":
 
-                        logger.warning(
-                            "Quota exceeded | model=%s | moving to next model/client",
-                            model_name,
+                # ================================================
+                # TEMPORARY 503
+                # ================================================
+
+                if error_type == "temporary":
+
+                    if attempt < 3:
+
+                        wait_seconds = min(
+                            2 ** attempt,
+                            8,
                         )
 
-                        # Shu modelni qayta-qayta urmaymiz.
-                        # Keyingi modelga o'tamiz.
-                        break
-
-
-                    # ------------------------------------------------
-                    # AUTH
-                    # ------------------------------------------------
-
-                    if error_type in (
-                        "auth",
-                        "permission",
-                    ):
-
-                        logger.warning(
-                            "API key/ruxsat muammosi | client=%s",
-                            client_index + 1,
+                        wait_seconds += random.uniform(
+                            0.2,
+                            0.8,
                         )
 
-                        # Keyingi API key bo'lsa unga o'tamiz.
-                        break
-
-
-                    # ------------------------------------------------
-                    # MODEL NOT FOUND
-                    # ------------------------------------------------
-
-                    if error_type == "model":
-
                         logger.warning(
-                            "Model mavjud emas yoki project uchun ruxsat yo'q: %s",
-                            model_name,
+                            "Gemini vaqtincha unavailable. %.1f sec kutamiz.",
+                            wait_seconds,
                         )
 
-                        # Keyingi model.
-                        break
+                        time.sleep(
+                            wait_seconds
+                        )
+
+                        continue
+
+                    break
 
 
-                    # ------------------------------------------------
-                    # 503 / TEMPORARY
-                    # ------------------------------------------------
+                # ================================================
+                # UNKNOWN ERROR
+                # ================================================
 
-                    if error_type == "temporary":
+                if attempt < 3:
 
-                        if attempt < max_attempts:
+                    time.sleep(2)
 
-                            delay = min(
-                                2 ** attempt,
-                                8,
-                            )
+                else:
 
-                            # Ozgina random jitter.
-                            delay += random.uniform(
-                                0.2,
-                                1.0,
-                            )
-
-                            logger.warning(
-                                "Temporary Gemini error. %.1f sec kutamiz.",
-                                delay,
-                            )
-
-                            time.sleep(
-                                delay
-                            )
-
-                            continue
-
-                        break
-
-
-                    # ------------------------------------------------
-                    # UNKNOWN
-                    # ------------------------------------------------
-
-                    if attempt < max_attempts:
-
-                        time.sleep(2)
-
-                    else:
-
-                        break
+                    break
 
 
     raise RuntimeError(
@@ -612,7 +607,11 @@ TELEGRAM_MAX_LENGTH = 4000
 def split_text(
     text: str,
     max_length: int = TELEGRAM_MAX_LENGTH,
-):
+) -> list[str]:
+
+    if not text:
+
+        return [""]
 
     if len(text) <= max_length:
 
@@ -624,12 +623,15 @@ def split_text(
 
     while len(remaining) > max_length:
 
+        # Avval yangi qatordan bo'lamiz.
         cut = remaining.rfind(
             "\n",
             0,
             max_length,
         )
 
+        # Juda kichik bo'lib qolsa,
+        # bo'sh joydan bo'lamiz.
         if cut < max_length // 2:
 
             cut = remaining.rfind(
@@ -638,6 +640,8 @@ def split_text(
                 max_length,
             )
 
+        # Hech qanday qulay joy topilmasa,
+        # majburiy bo'lamiz.
         if cut < max_length // 2:
 
             cut = max_length
@@ -668,9 +672,13 @@ def split_text(
 async def send_long_message(
     message: types.Message,
     text: str,
-):
+) -> None:
 
-    for chunk in split_text(text):
+    chunks = split_text(
+        text
+    )
+
+    for chunk in chunks:
 
         await message.answer(
             chunk,
@@ -690,7 +698,7 @@ dp = Dispatcher()
 
 
 # ============================================================
-# HEALTH SERVER
+# HEALTH CHECK SERVER
 # ============================================================
 
 class HealthCheckHandler(
@@ -753,7 +761,7 @@ def run_health_check_server():
 
 
 # ============================================================
-# ADMIN
+# ADMIN CHECK
 # ============================================================
 
 def is_admin(
@@ -856,15 +864,17 @@ async def reset_handler(
     message: types.Message,
 ):
 
-    if message.from_user:
+    if not message.from_user:
 
-        register_user(
-            message.from_user
-        )
+        return
 
-        reset_user_memory(
-            message.from_user.id
-        )
+    register_user(
+        message.from_user
+    )
+
+    reset_user_memory(
+        message.from_user.id
+    )
 
     await message.answer(
         "🧠 Suhbat xotirasi tozalandi.\n\n"
@@ -895,7 +905,9 @@ async def users_handler(
 
         return
 
-    total_users = len(users)
+    total_users = len(
+        users
+    )
 
     total_messages = sum(
         user_message_counts.values()
@@ -978,7 +990,7 @@ async def users_handler(
 
 
 # ============================================================
-# TEXT
+# TEXT HANDLER
 # ============================================================
 
 @dp.message(F.text)
@@ -1002,7 +1014,7 @@ async def text_handler(
 
         return
 
-    # Komandalar boshqa handlerlarda ishlaydi.
+    # Komandalarni o'tkazib yuboramiz.
     if user_text.startswith("/"):
 
         return
@@ -1016,7 +1028,7 @@ async def text_handler(
         user_id,
         message.from_user.full_name,
         message.from_user.username or "-",
-        user_text[:200],
+        user_text[:300],
     )
 
     processing = await message.answer(
@@ -1045,6 +1057,7 @@ async def text_handler(
             else "Kechirasiz, javob bo'sh qaytdi."
         )
 
+        # Faqat muvaffaqiyatli javobdan keyin memory'ga yozamiz.
         add_to_history(
             user_id,
             "user",
@@ -1073,31 +1086,46 @@ async def text_handler(
     except Exception as error:
 
         logger.exception(
-            "Text handler error: %s",
-            error,
+            "Text handler error",
+            exc_info=error,
         )
 
-        error_text = str(error).lower()
+        error_type = get_error_type(
+            error
+        )
 
-        if (
-            "429" in error_text
-            or "resource_exhausted" in error_text
-            or "quota" in error_text
-        ):
+        if error_type == "quota":
 
             user_error = (
-                "⏳ AI xizmatining hozirgi quota limiti tugagan.\n\n"
-                "Birozdan keyin yana urinib ko'ring."
+                "⏳ Hozircha AI xizmatining quota limiti tugagan.\n\n"
+                "Bu botdagi xato emas — Gemini API limitiga "
+                "yetib qoldik.\n\n"
+                "Keyinroq yana urinib ko'ring."
             )
 
-        elif (
-            "503" in error_text
-            or "unavailable" in error_text
+        elif error_type == "temporary":
+
+            user_error = (
+                "⏳ Gemini serveri hozircha band.\n\n"
+                "Bir necha soniyadan keyin yana urinib ko'ring."
+            )
+
+        elif error_type in (
+            "auth",
+            "permission",
         ):
 
             user_error = (
-                "⏳ AI serveri vaqtincha band.\n\n"
-                "Bir necha soniyadan keyin yana urinib ko'ring."
+                "🔐 Gemini API kaliti yoki ruxsat bilan bog'liq "
+                "muammo yuz berdi.\n\n"
+                "Administrator API sozlamalarini tekshirishi kerak."
+            )
+
+        elif error_type == "model":
+
+            user_error = (
+                "⚠️ Gemini modeli bilan bog'liq muammo yuz berdi.\n\n"
+                "Administrator model sozlamasini tekshirishi kerak."
             )
 
         else:
@@ -1121,7 +1149,7 @@ async def text_handler(
 
 
 # ============================================================
-# PHOTO
+# PHOTO HANDLER
 # ============================================================
 
 @dp.message(F.photo)
@@ -1168,15 +1196,32 @@ async def photo_handler(
 
         image_bytes = downloaded_file.read()
 
-        prompt = (
-            message.caption.strip()
-            if message.caption
-            else
-            "Ushbu rasmni batafsil tahlil qiling. "
-            "Rasmda nima borligini tushuntiring. "
-            "Agar unda matn, masala, diagramma yoki "
-            "savol bo'lsa, uni ham tahlil qiling."
-        )
+        if message.caption:
+
+            prompt = message.caption.strip()
+
+        else:
+
+            prompt = """
+Ushbu rasmni diqqat bilan tahlil qiling.
+
+Rasmda nima borligini tushuntiring.
+
+Agar rasmda:
+- matn
+- savol
+- matematika masalasi
+- kod
+- diagramma
+- jadval
+- grafik
+- hujjat
+
+bo'lsa, uni ham o'qing va tahlil qiling.
+
+Agar foydalanuvchi savol bermagan bo'lsa,
+rasm haqida eng muhim va foydali ma'lumotlarni bering.
+"""
 
         image_part = genai_types.Part.from_bytes(
             data=image_bytes,
@@ -1217,26 +1262,33 @@ async def photo_handler(
     except Exception as error:
 
         logger.exception(
-            "Photo handler error: %s",
-            error,
+            "Photo handler error",
+            exc_info=error,
         )
 
-        error_text = str(error).lower()
+        error_type = get_error_type(
+            error
+        )
 
-        if (
-            "429" in error_text
-            or "resource_exhausted" in error_text
-        ):
+        if error_type == "quota":
 
             user_error = (
-                "⏳ Rasm tahlili uchun AI quota limiti tugagan.\n\n"
+                "⏳ Hozircha rasm tahlili uchun "
+                "Gemini quota limiti tugagan."
+            )
+
+        elif error_type == "temporary":
+
+            user_error = (
+                "⏳ Gemini serveri vaqtincha band.\n"
                 "Birozdan keyin yana urinib ko'ring."
             )
 
         else:
 
             user_error = (
-                "⚠️ Rasmni tahlil qilishda texnik xatolik yuz berdi."
+                "⚠️ Rasmni tahlil qilishda "
+                "texnik xatolik yuz berdi."
             )
 
         try:
@@ -1253,7 +1305,7 @@ async def photo_handler(
 
 
 # ============================================================
-# VOICE
+# VOICE HANDLER
 # ============================================================
 
 @dp.message(F.voice)
@@ -1308,11 +1360,11 @@ async def voice_handler(
         prompt = """
 Ushbu ovozli xabarni diqqat bilan tinglang.
 
-1. Undagi nutqni tushuning.
-2. Foydalanuvchi nima so'rayotganini aniqlang.
-3. Agar savol yoki topshiriq bo'lsa, uni bajaring.
-4. Javobni foydalanuvchi gapirgan asosiy tilda bering.
-5. Faqat transkripsiya bilan cheklanib qolmang.
+1. Foydalanuvchining nutqini tushuning.
+2. Uning savoli yoki topshirig'ini aniqlang.
+3. Agar topshiriq bo'lsa, uni bajaring.
+4. Faqat transkripsiya bilan cheklanib qolmang.
+5. Javobni foydalanuvchi gapirgan asosiy tilda bering.
 """
 
         loop = asyncio.get_running_loop()
@@ -1349,19 +1401,25 @@ Ushbu ovozli xabarni diqqat bilan tinglang.
     except Exception as error:
 
         logger.exception(
-            "Voice handler error: %s",
-            error,
+            "Voice handler error",
+            exc_info=error,
         )
 
-        error_text = str(error).lower()
+        error_type = get_error_type(
+            error
+        )
 
-        if (
-            "429" in error_text
-            or "resource_exhausted" in error_text
-        ):
+        if error_type == "quota":
 
             user_error = (
-                "⏳ Ovoz tahlili uchun AI quota limiti tugagan.\n\n"
+                "⏳ Hozircha ovoz tahlili uchun "
+                "Gemini quota limiti tugagan."
+            )
+
+        elif error_type == "temporary":
+
+            user_error = (
+                "⏳ Gemini serveri vaqtincha band.\n"
                 "Birozdan keyin yana urinib ko'ring."
             )
 
@@ -1386,33 +1444,28 @@ Ushbu ovozli xabarni diqqat bilan tinglang.
 
 
 # ============================================================
-# MAIN
+# START BOT
 # ============================================================
 
 async def main():
 
+    # Render health check.
     Thread(
         target=run_health_check_server,
         daemon=True,
     ).start()
 
     logger.info(
+        "========================================"
+    )
+
+    logger.info(
         "Telegram AI ishga tushmoqda..."
     )
 
     logger.info(
-        "Primary model: %s",
-        PRIMARY_MODEL,
-    )
-
-    logger.info(
-        "Fallback models: %s",
-        MODEL_FALLBACKS,
-    )
-
-    logger.info(
-        "API clients: %s",
-        len(clients),
+        "Model: %s",
+        MODEL_NAME,
     )
 
     logger.info(
@@ -1421,10 +1474,20 @@ async def main():
     )
 
     logger.info(
+        "API clients: %s",
+        len(clients),
+    )
+
+    logger.info(
         "Admin ID: %s",
         ADMIN_USER_ID,
     )
 
+    logger.info(
+        "========================================"
+    )
+
+    # Eski webhook/pending update'larni tozalash.
     await bot.delete_webhook(
         drop_pending_updates=True
     )
