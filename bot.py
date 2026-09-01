@@ -8,6 +8,7 @@ from io import BytesIO
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from google import genai
+from google.genai import types as genai_types
 from PIL import Image
 
 logging.basicConfig(level=logging.INFO)
@@ -36,13 +37,14 @@ async def start_handler(message: types.Message):
 
 @dp.message(F.text)
 async def text_handler(message: types.Message):
-    typing_msg = await message.answer("⚡ Javob tayyorlanmoqda...")
+    typing_msg = await message.answer("🤔 Javob tayyorlanmoqda...")
     try:
-        # Tezroq va lo'nda javob berishi uchun stream ishlatamiz
         response = ai_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=message.text,
-            config={"system_instruction": "Javoblarni aniq, londa, juda chozmasdan va tez tushunarli uslubda ber."}
+            config=genai_types.GenerateContentConfig(
+                system_instruction="Javobni o'zbek tilida, aniq, lo'nda va tushunarli tarzda ber."
+            )
         )
         await typing_msg.edit_text(response.text)
     except Exception as e:
@@ -72,10 +74,8 @@ async def photo_handler(message: types.Message):
 async def main():
     Thread(target=run_health_check_server, daemon=True).start()
     logging.info("khidirov_ai ishga tushdi...")
-    
-    # Eski barcha seans va navbatlarni tozalash
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot, skip_updates=True)
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
