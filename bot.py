@@ -44,7 +44,7 @@ async def text_handler(message: types.Message):
     typing_msg = await message.answer("🤔 Fikr yuritilmoqda...")
     try:
         response = ai_client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash", 
             contents=message.text
         )
         await typing_msg.edit_text(response.text)
@@ -65,7 +65,7 @@ async def photo_handler(message: types.Message):
         prompt = message.caption if message.caption else "Ushbu rasmni batafsil tasvirlab ber."
         
         response = ai_client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             contents=[prompt, image]
         )
         await typing_msg.edit_text(response.text)
