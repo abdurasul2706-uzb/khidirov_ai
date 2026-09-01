@@ -15,22 +15,29 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Google Gemini sozlasi
+# API ni sozlash
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Rasmiy va barqaror multimodal model
+# Dunyodagi eng kuchli multimodal model sozlamalari
+SYSTEM_INSTRUCTION = (
+    "Siz Telegram'dagi eng kuchli, donishmand, samimiy va tezkor Sun'iy Intelekt yordamchisiz. "
+    "Sizning maqsadingiz — har bir foydalanuvchiga (talaba, o'qituvchi, ishchi, dasturchi) xuddi tajribali inson kabi mukammal yordam berish.\n"
+    "Qoidalaringiz:\n"
+    "1. Muloqot tili: Foydalanuvchi qaysi tilda yozsa (lotin o'zbekcha, kirill o'zbekcha, ruscha, inglizcha va h.k.), aynan o'sha tilda javob bering.\n"
+    "2. Uslub: Mantiqiy, chuqur, aniq, muloyim va foydali bo'lsin. Murakkab narsalarni ham oddiy va tushunarli tilda tushuntiring.\n"
+    "3. Rasmlar va audio: Rasmlarni o'ta sinchiklab tahlil qiling. Ovozli xabar kelsa, undagi har bir so'z va ma'noni to'g'ri anglab javob bering.\n"
+    "4. Formatlash: Telegram belgilari bilan xatolik kelib chiqmasligi uchun javobingizni chiroyli va tartibli matn shaklida berishga harakat qiling."
+)
+
 model = genai.GenerativeModel(
     model_name="gemini-3.6-flash",
-    system_instruction=(
-        "Siz dunyodagi eng aqlli, bilimdon va tezkor AI yordamchisiz. "
-        "Foydalanuvchining har qanday tildagi (lotin, kirill, rus, ingliz) "
-        "savollariga aniq, to'liq va mantiqiy javob bering."
-    )
+    system_instruction=SYSTEM_INSTRUCTION
 )
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Render bepul serveri uxlab qolmasligi uchun Health Check
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -47,25 +54,30 @@ def run_health_check_server():
 
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
-    await message.answer(
-        "Ассалому алайкум! Мен сизнинг энг кучли АИ ёрдамчингизман.\n"
-        "Menga matn (latin/kirill), rasm yoki ovozli xabar yuborishingiz mumkin!"
+    welcome_text = (
+        "Assalomu alaykum! Men sizning universal AI yordamchingizman.\n\n"
+        "Menga o'zingizni qiziqtirgan har qanday savolni berishingiz mumkin:\n"
+        " Matnli savollar (Lotin/Kirill, Rus, Ingliz tillarida)\n"
+        " Rasmlar (tahlil qilish va yechim topshirish uchun)\n"
+        " Ovozli xabarlar\n\n"
+        "Sizga yordam berishdan xursandman!"
     )
+    await message.answer(welcome_text)
 
 @dp.message(F.text)
 async def text_handler(message: types.Message):
-    typing_msg = await message.answer("⚡ Javob tayyorlanmoqda...")
+    typing_msg = await message.answer("⚡ Javob o'ylanmoqda...")
     try:
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: model.generate_content(message.text)
         )
-        text_res = response.text if response.text else "Javob olishda muammo bo'ldi."
+        text_res = response.text if response.text else "Kechirasiz, fikrimni shakllantirishda muammo bo'ldi."
         await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
-        logging.error(f"Matn xatoligi: {e}")
-        await typing_msg.edit_text(f"Xatolik yuz berdi: {e}")
+        logging.error(f"Matn xatosi: {e}")
+        await typing_msg.edit_text("Hozirda so'rovlar juda ko'payib ketdi. Iltimos, bir ozdan so'ng qayta urinib ko'ring.")
 
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
@@ -76,22 +88,22 @@ async def photo_handler(message: types.Message):
         downloaded_file = await bot.download_file(file_info.file_path)
         
         image = Image.open(BytesIO(downloaded_file.read()))
-        prompt = message.caption if message.caption else "Ushbu rasmni batafsil tahlil qilib ber."
+        prompt = message.caption if message.caption else "Ushbu rasmni chuqur tahlil qilib, unga batafsil javob ber."
         
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: model.generate_content([prompt, image])
         )
-        text_res = response.text if response.text else "Rasmni tahlil qilib bo'lmadi."
+        text_res = response.text if response.text else "Rasmni to'liq tahlil qila olmadim."
         await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
-        logging.error(f"Rasm xatoligi: {e}")
-        await typing_msg.edit_text(f"Rasm tahlilida xatolik: {e}")
+        logging.error(f"Rasm xatosi: {e}")
+        await typing_msg.edit_text("Rasmni qayta ishlashda xatolik bo'ldi. Qayta yuborib ko'ring.")
 
 @dp.message(F.voice)
 async def voice_handler(message: types.Message):
-    typing_msg = await message.answer("🎙 Ovozli xabar eshitilmoqda...")
+    typing_msg = await message.answer("🎙 Ovozingiz eshitilmoqda...")
     try:
         voice = message.voice
         file_info = await bot.get_file(voice.file_id)
@@ -101,7 +113,7 @@ async def voice_handler(message: types.Message):
             "mime_type": "audio/ogg",
             "data": downloaded_file.read()
         }
-        prompt = "Ushbu ovozli xabarni eshitib, undagi savolga batafsil javob ber."
+        prompt = "Ushbu ovozli xabarda nima deyilganini diqqat bilan tinglab, unga o'ta aniq va atroflicha javob ber."
         
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
@@ -111,12 +123,12 @@ async def voice_handler(message: types.Message):
         text_res = response.text if response.text else "Ovozli xabarni tushunishda muammo bo'ldi."
         await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
-        logging.error(f"Ovoz xatoligi: {e}")
-        await typing_msg.edit_text(f"Ovoz tahlilida xatolik: {e}")
+        logging.error(f"Ovoz xatosi: {e}")
+        await typing_msg.edit_text("Ovozli xabarni tahlil qilishda texnik xatolik yuz berdi.")
 
 async def main():
     Thread(target=run_health_check_server, daemon=True).start()
-    logging.info("khidirov_ai ishga tushdi...")
+    logging.info("AI Bot muvaffaqiyatli ishga tushdi...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
