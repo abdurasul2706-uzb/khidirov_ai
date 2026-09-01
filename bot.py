@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import time
+
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
@@ -10,7 +11,6 @@ from typing import Any
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
-
 from google import genai
 from google.genai import types as genai_types
 
@@ -41,49 +41,20 @@ API_KEYS = [
     if key.strip()
 ]
 
-
-# ============================================================
-# GEMINI MODELS
-# ============================================================
-
 MODEL_NAME = os.getenv(
     "GEMINI_MODEL",
     "gemini-3.7-flash",
-).strip()
-
-
-# Fallback modellar.
-#
-# Agar kerak bo'lsa Render Environment Variables orqali:
-#
-# GEMINI_FALLBACK_MODELS=gemini-3.6-flash,gemini-3.5-flash
-#
-# ko'rinishida o'zgartirish mumkin.
-
-RAW_FALLBACK_MODELS = os.getenv(
-    "GEMINI_FALLBACK_MODELS",
-    "gemini-3.6-flash,gemini-3.5-flash",
 )
-
-FALLBACK_MODELS = [
-    model.strip()
-    for model in RAW_FALLBACK_MODELS.split(",")
-    if model.strip()
-]
-
-
-# ============================================================
-# THINKING LEVEL
-# ============================================================
-
-# low    = tezroq
-# medium = balans
-# high   = chuqurroq reasoning
 
 THINKING_LEVEL = os.getenv(
     "GEMINI_THINKING_LEVEL",
-    "medium",
-).strip().lower()
+    "high",
+)
+
+ADMIN_USER_ID_RAW = os.getenv(
+    "ADMIN_USER_ID",
+    "",
+).strip()
 
 
 # ============================================================
@@ -100,6 +71,13 @@ if not API_KEYS:
         "GEMINI_API_KEY Render Environment Variables'da mavjud emas!"
     )
 
+try:
+    ADMIN_USER_ID = int(ADMIN_USER_ID_RAW)
+except ValueError:
+    raise RuntimeError(
+        "ADMIN_USER_ID noto'g'ri. Masalan: 970088832"
+    )
+
 
 # ============================================================
 # GEMINI CLIENTS
@@ -112,7 +90,7 @@ clients = [
 
 
 # ============================================================
-# AI PERSONALITY / SYSTEM INSTRUCTION
+# AI PERSONALITY
 # ============================================================
 
 SYSTEM_INSTRUCTION = """
@@ -126,16 +104,17 @@ MUHIM QOIDALAR:
 
 1. TIL
 
-Foydalanuvchi qaysi tilda murojaat qilsa, asosan o'sha tilda
-javob bering.
+Foydalanuvchi qaysi tilda murojaat qilsa,
+asosan o'sha tilda javob bering.
 
-O'zbek tilida lotin yoki kirill yozilsa, mos ravishda javob bering.
+O'zbek tilida lotin yoki kirill yozilsa,
+mos ravishda javob bering.
 
 Ruscha savolga ruscha.
-
 Inglizcha savolga inglizcha.
 
-Aralash tilda yozilsa, foydalanuvchining asosiy tilini aniqlab,
+Aralash tilda yozilsa,
+foydalanuvchining asosiy tilini aniqlab,
 shu tilda javob bering.
 
 
@@ -145,8 +124,8 @@ Bilmagan narsangizni uydirmang.
 
 Noaniq ma'lumotni aniq fakt sifatida ko'rsatmang.
 
-Agar savolda yetarli ma'lumot bo'lmasa, kerakli aniqlashtirishni
-so'rang.
+Agar savolda yetarli ma'lumot bo'lmasa,
+kerakli aniqlashtirishni so'rang.
 
 
 3. MANTIQ
@@ -171,48 +150,37 @@ bo'lsin.
 
 Kerak bo'lsa:
 
-- sarlavhalar
-- ro'yxatlar
-- jadval
-- misollar
-- kod bloklari
-
-dan foydalaning.
+sarlavhalar,
+ro'yxatlar,
+jadval,
+misollar,
+kod bloklaridan foydalaning.
 
 
 5. RASM
 
 Rasm yuborilsa, uni diqqat bilan tahlil qiling.
 
-Undagi:
+Undagi matn, obyektlar, diagrammalar, grafiklar
+va kontekstni imkon qadar tushuning.
 
-- matn
-- obyektlar
-- diagrammalar
-- grafiklar
-- hujjatlar
-- masalalar
-
-va boshqa muhim elementlarni imkon qadar tushuning.
-
-Foydalanuvchi savol bergan bo'lsa, aynan shu savolga javob bering.
+Foydalanuvchi savol bergan bo'lsa,
+aynan shu savolga javob bering.
 
 
 6. OVOZ
 
 Ovozli xabar yuborilsa:
 
-- undagi nutqni tushuning,
-- foydalanuvchi nima so'rayotganini aniqlang,
-- topshiriq bo'lsa bajaring,
-- javobni foydalanuvchi tilida bering.
-
-Faqat transkripsiya bilan cheklanib qolmang.
+- undagi nutqni tushuning
+- savol yoki topshiriqni aniqlang
+- keyin foydalanuvchi tilida javob bering
 
 
 7. KOD
 
-Dasturlash savollarida ishlaydigan, aniq va xavfsiz kod yozing.
+Dasturlash savollarida ishlaydigan,
+aniq va xavfsiz kod yozing.
 
 Kod kerak bo'lsa, to'liq misol keltiring.
 
@@ -229,19 +197,19 @@ Kerak bo'lsa oddiy misoldan boshlang.
 
 9. SAMIMIYLIK
 
-Foydalanuvchi bilan insoniy, hurmatli va samimiy muloqot qiling.
+Foydalanuvchi bilan insoniy, hurmatli va samimiy
+muloqot qiling.
 
 Lekin ortiqcha maqtov yoki sun'iy gaplardan qoching.
 
 
-10. ASOSIY MAQSAD
+10. MUHIM
 
-Sizning maqsadingiz shunchaki javob berish emas.
+Sizning maqsadingiz shunchaki javob berish emas,
+foydalanuvchining muammosini imkon qadar oxirigacha hal qilish.
 
-Foydalanuvchining muammosini imkon qadar oxirigacha hal qilishga
-harakat qiling.
-
-Agar vazifa murakkab bo'lsa, javobni tartibli ravishda bering.
+Agar vazifa murakkab bo'lsa,
+javobni tartibli ravishda bering.
 """
 
 
@@ -249,14 +217,67 @@ Agar vazifa murakkab bo'lsa, javobni tartibli ravishda bering.
 # USER MEMORY
 # ============================================================
 
-# Hozircha RAM'dagi vaqtinchalik xotira.
-#
-# Keyingi bosqichda PostgreSQL bilan doimiy memory qo'shamiz.
-
 user_histories: dict[int, list[dict[str, str]]] = defaultdict(list)
 
 MAX_HISTORY_MESSAGES = 12
 
+
+# ============================================================
+# USER STATISTICS
+# ============================================================
+
+users: dict[int, dict[str, Any]] = {}
+
+user_message_counts: dict[int, int] = defaultdict(int)
+user_photo_counts: dict[int, int] = defaultdict(int)
+user_voice_counts: dict[int, int] = defaultdict(int)
+
+
+def register_user(
+    user: types.User,
+) -> None:
+
+    user_id = user.id
+
+    if user_id not in users:
+
+        users[user_id] = {
+            "id": user_id,
+            "name": user.full_name or "Noma'lum",
+            "username": user.username or "",
+            "first_seen": time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "last_seen": time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+        }
+
+        logger.info(
+            "NEW USER | id=%s | name=%s | username=@%s",
+            user_id,
+            user.full_name,
+            user.username or "-",
+        )
+
+    else:
+
+        users[user_id]["name"] = (
+            user.full_name or users[user_id]["name"]
+        )
+
+        users[user_id]["username"] = (
+            user.username or users[user_id]["username"]
+        )
+
+        users[user_id]["last_seen"] = time.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+
+# ============================================================
+# HISTORY
+# ============================================================
 
 def add_to_history(
     user_id: int,
@@ -282,7 +303,10 @@ def build_prompt(
     current_message: str,
 ) -> str:
 
-    history = user_histories.get(user_id, [])
+    history = user_histories.get(
+        user_id,
+        [],
+    )
 
     if not history:
         return current_message
@@ -306,15 +330,15 @@ def build_prompt(
                 f"AI yordamchi: {text}"
             )
 
-    history_text = "\n\n".join(previous_messages)
+    history_text = "\n\n".join(
+        previous_messages
+    )
 
     return f"""
 Quyida ushbu foydalanuvchi bilan oldingi suhbat tarixi bor.
 
 --- OLDINGI SUHBAT ---
-
 {history_text}
-
 --- SUHBAT OXIRI ---
 
 Endi foydalanuvchining yangi xabari:
@@ -337,261 +361,73 @@ def reset_user_memory(
 
 
 # ============================================================
-# GEMINI HELPERS
+# GEMINI REQUEST
 # ============================================================
-
-def get_model_chain() -> list[str]:
-    """
-    Asosiy model + fallback modellarni tartibli ro'yxat qiladi.
-    Takrorlangan modellar olib tashlanadi.
-    """
-
-    models = []
-
-    all_models = [
-        MODEL_NAME,
-        *FALLBACK_MODELS,
-    ]
-
-    for model in all_models:
-
-        if model and model not in models:
-            models.append(model)
-
-    return models
-
-
-def is_temporary_gemini_error(
-    error: Exception,
-) -> bool:
-    """
-    Gemini vaqtinchalik server xatosini aniqlaydi.
-
-    Masalan:
-
-    503
-    UNAVAILABLE
-    Service Unavailable
-    high demand
-    overloaded
-    """
-
-    error_text = str(error).lower()
-
-    temporary_signatures = [
-        "503",
-        "unavailable",
-        "service unavailable",
-        "currently experiencing high demand",
-        "high demand",
-        "temporarily unavailable",
-        "overloaded",
-        "internal server error",
-        "deadline exceeded",
-        "timeout",
-    ]
-
-    return any(
-        signature in error_text
-        for signature in temporary_signatures
-    )
-
 
 def generate_with_gemini(
     contents: Any,
 ):
-    """
-    Gemini request manager.
-
-    Ishlash tartibi:
-
-    1. Asosiy model
-    2. 503 bo'lsa retry
-    3. Hali ham ishlamasa fallback model
-    4. API key'larni ham navbat bilan sinash
-    5. Hammasi ishlamasa RuntimeError
-    """
-
-    model_chain = get_model_chain()
 
     client_order = list(
         range(len(clients))
     )
 
-    # Client'larni tasodifiy tartibda ishlatamiz.
-    random.shuffle(client_order)
+    random.shuffle(
+        client_order
+    )
 
     last_error = None
 
-    logger.info(
-        "Gemini model chain: %s",
-        " -> ".join(model_chain),
-    )
+    for index in client_order:
 
-    # ========================================================
-    # MODEL LOOP
-    # ========================================================
+        client = clients[index]
 
-    for model_position, model_name in enumerate(model_chain):
+        for attempt in range(3):
 
-        is_fallback = model_position > 0
+            try:
 
-        if is_fallback:
+                logger.info(
+                    "Gemini request | client=%s | attempt=%s",
+                    index + 1,
+                    attempt + 1,
+                )
 
-            logger.warning(
-                "Using fallback model | model=%s",
-                model_name,
-            )
-
-        # ====================================================
-        # API CLIENT LOOP
-        # ====================================================
-
-        for client_index in client_order:
-
-            client = clients[client_index]
-
-            # =================================================
-            # RETRY LOOP
-            # =================================================
-
-            for attempt in range(3):
-
-                try:
-
-                    logger.info(
-                        "Gemini request | "
-                        "model=%s | client=%s | attempt=%s",
-                        model_name,
-                        client_index + 1,
-                        attempt + 1,
-                    )
-
-                    # =========================================
-                    # GEMINI REQUEST
-                    # =========================================
-
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=contents,
-                        config=genai_types.GenerateContentConfig(
-                            system_instruction=SYSTEM_INSTRUCTION,
-                            thinking_config=genai_types.ThinkingConfig(
-                                thinking_level=THINKING_LEVEL
-                            ),
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=contents,
+                    config=genai_types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        thinking_config=genai_types.ThinkingConfig(
+                            thinking_level=THINKING_LEVEL
                         ),
-                    )
+                    ),
+                )
 
-                    # =========================================
-                    # EMPTY RESPONSE
-                    # =========================================
-
-                    if not response:
-
-                        raise RuntimeError(
-                            "Gemini response bo'sh qaytdi."
-                        )
-
-                    if not response.text:
-
-                        raise RuntimeError(
-                            "Gemini bo'sh matn qaytardi."
-                        )
-
-                    # =========================================
-                    # SUCCESS
-                    # =========================================
-
-                    logger.info(
-                        "Gemini success | "
-                        "model=%s | client=%s",
-                        model_name,
-                        client_index + 1,
-                    )
+                if response and response.text:
 
                     return response
 
-                except Exception as error:
+                raise RuntimeError(
+                    "Gemini bo'sh javob qaytardi."
+                )
 
-                    last_error = error
+            except Exception as error:
 
-                    logger.error(
-                        "Gemini error | "
-                        "model=%s | client=%s | attempt=%s | error=%s",
-                        model_name,
-                        client_index + 1,
-                        attempt + 1,
-                        error,
-                    )
+                last_error = error
 
-                    # =========================================
-                    # TEMPORARY ERROR
-                    # =========================================
+                logger.error(
+                    "Gemini error | client=%s | attempt=%s | %s",
+                    index + 1,
+                    attempt + 1,
+                    error,
+                )
 
-                    if is_temporary_gemini_error(error):
+                delay = min(
+                    2 ** attempt,
+                    8,
+                )
 
-                        # 5 -> 10 -> 20 sekund
-                        delay = min(
-                            5 * (2 ** attempt),
-                            20,
-                        )
-
-                        # Random jitter.
-                        jitter = random.uniform(
-                            0,
-                            2,
-                        )
-
-                        total_delay = (
-                            delay + jitter
-                        )
-
-                        logger.warning(
-                            "Temporary Gemini error. "
-                            "Retrying in %.1f seconds | "
-                            "model=%s | attempt=%s",
-                            total_delay,
-                            model_name,
-                            attempt + 1,
-                        )
-
-                        time.sleep(
-                            total_delay
-                        )
-
-                        continue
-
-                    # =========================================
-                    # NON-TEMPORARY ERROR
-                    # =========================================
-
-                    logger.warning(
-                        "Non-temporary Gemini error. "
-                        "Trying next API client/model."
-                    )
-
-                    break
-
-        # ====================================================
-        # FALLBACK
-        # ====================================================
-
-        if model_position < len(model_chain) - 1:
-
-            next_model = model_chain[
-                model_position + 1
-            ]
-
-            logger.warning(
-                "Model %s failed. "
-                "Switching to %s",
-                model_name,
-                next_model,
-            )
-
-    # ========================================================
-    # ALL FAILED
-    # ========================================================
+                time.sleep(delay)
 
     raise RuntimeError(
         f"Gemini bilan bog'lanib bo'lmadi: {last_error}"
@@ -599,7 +435,7 @@ def generate_with_gemini(
 
 
 # ============================================================
-# TELEGRAM LONG MESSAGE SUPPORT
+# TELEGRAM LONG MESSAGE
 # ============================================================
 
 TELEGRAM_MAX_LENGTH = 4000
@@ -608,42 +444,23 @@ TELEGRAM_MAX_LENGTH = 4000
 def split_text(
     text: str,
     max_length: int = TELEGRAM_MAX_LENGTH,
-) -> list[str]:
-    """
-    Uzun Gemini javoblarini Telegram limitiga moslaydi.
-
-    Iloji boricha:
-
-    1. paragraf
-    2. yangi qator
-    3. bo'sh joy
-
-    bo'yicha ajratadi.
-    """
-
-    text = text.strip()
-
-    if not text:
-        return []
+):
 
     if len(text) <= max_length:
         return [text]
 
     chunks = []
 
-    remaining = text
+    remaining = text.strip()
 
     while len(remaining) > max_length:
 
-        # Avval paragraf/yangi qator bo'yicha kesamiz.
         cut = remaining.rfind(
             "\n",
             0,
             max_length,
         )
 
-        # Juda kichik chunk bo'lib qolsa,
-        # oddiy space bo'yicha qidiramiz.
         if cut < max_length // 2:
 
             cut = remaining.rfind(
@@ -652,8 +469,6 @@ def split_text(
                 max_length,
             )
 
-        # Hech qanday yaxshi joy topilmasa,
-        # majburan limit bo'yicha kesamiz.
         if cut < max_length // 2:
 
             cut = max_length
@@ -678,45 +493,16 @@ def split_text(
 async def send_long_message(
     message: types.Message,
     text: str,
-) -> None:
+):
 
     chunks = split_text(text)
 
-    if not chunks:
-
-        await message.answer(
-            "Kechirasiz, javob bo'sh qaytdi."
-        )
-
-        return
-
     for chunk in chunks:
 
-        try:
-
-            await message.answer(
-                chunk,
-                parse_mode=None,
-            )
-
-        except Exception:
-
-            logger.exception(
-                "Telegram message send error."
-            )
-
-            try:
-
-                await message.answer(
-                    str(chunk),
-                    parse_mode=None,
-                )
-
-            except Exception:
-
-                logger.exception(
-                    "Telegram fallback message send error."
-                )
+        await message.answer(
+            chunk,
+            parse_mode=None,
+        )
 
 
 # ============================================================
@@ -724,14 +510,14 @@ async def send_long_message(
 # ============================================================
 
 bot = Bot(
-    token=BOT_TOKEN,
+    token=BOT_TOKEN
 )
 
 dp = Dispatcher()
 
 
 # ============================================================
-# HEALTH CHECK SERVER
+# HEALTH CHECK
 # ============================================================
 
 class HealthCheckHandler(
@@ -793,15 +579,30 @@ def run_health_check_server():
 
 
 # ============================================================
+# ADMIN CHECK
+# ============================================================
+
+def is_admin(
+    user_id: int,
+) -> bool:
+
+    return user_id == ADMIN_USER_ID
+
+
+# ============================================================
 # /START
 # ============================================================
 
-@dp.message(
-    CommandStart()
-)
+@dp.message(CommandStart())
 async def start_handler(
     message: types.Message,
 ):
+
+    if message.from_user:
+
+        register_user(
+            message.from_user
+        )
 
     await message.answer(
         "Assalomu alaykum! 🤝\n\n"
@@ -815,7 +616,8 @@ async def start_handler(
         "muloqot qila olaman.\n\n"
         "Buyruqlar:\n"
         "/help — yordam\n"
-        "/reset — suhbat xotirasini tozalash"
+        "/reset — suhbat xotirasini tozalash\n"
+        "/id — Telegram ID'ingiz"
     )
 
 
@@ -823,23 +625,51 @@ async def start_handler(
 # /HELP
 # ============================================================
 
-@dp.message(
-    Command("help")
-)
+@dp.message(Command("help"))
 async def help_handler(
     message: types.Message,
 ):
 
+    if message.from_user:
+
+        register_user(
+            message.from_user
+        )
+
     await message.answer(
-        "🤖 AI yordamchidan quyidagicha foydalanishingiz mumkin:\n\n"
+        "🤖 AI yordamchidan foydalanish:\n\n"
         "💬 Savol yozing — javob beraman.\n"
         "🖼 Rasm yuboring — tahlil qilaman.\n"
-        "🎙 Ovoz yuboring — tinglab, javob beraman.\n\n"
+        "🎙 Ovoz yuboring — tushunaman.\n\n"
         "🌍 O'zbek, rus, ingliz va boshqa tillar.\n"
-        "🧠 Murakkab mantiqiy va texnik savollar.\n"
+        "🧠 Murakkab savollar.\n"
         "💻 Dasturlash va kod.\n"
         "📚 Ta'lim va tushuntirish.\n\n"
-        "/reset — suhbat xotirasini tozalaydi."
+        "/reset — suhbat xotirasini tozalaydi.\n"
+        "/id — Telegram ID'ingizni ko'rsatadi."
+    )
+
+
+# ============================================================
+# /ID
+# ============================================================
+
+@dp.message(Command("id"))
+async def id_handler(
+    message: types.Message,
+):
+
+    if not message.from_user:
+        return
+
+    register_user(
+        message.from_user
+    )
+
+    await message.answer(
+        "🆔 Sizning Telegram ID'ingiz:\n\n"
+        f"`{message.from_user.id}`",
+        parse_mode="Markdown",
     )
 
 
@@ -847,16 +677,20 @@ async def help_handler(
 # /RESET
 # ============================================================
 
-@dp.message(
-    Command("reset")
-)
+@dp.message(Command("reset"))
 async def reset_handler(
     message: types.Message,
 ):
 
-    reset_user_memory(
-        message.from_user.id
-    )
+    if message.from_user:
+
+        register_user(
+            message.from_user
+        )
+
+        reset_user_memory(
+            message.from_user.id
+        )
 
     await message.answer(
         "🧠 Suhbat xotirasi tozalandi.\n\n"
@@ -865,22 +699,162 @@ async def reset_handler(
 
 
 # ============================================================
+# /USERS — ADMIN ONLY
+# ============================================================
+
+@dp.message(Command("users"))
+async def users_handler(
+    message: types.Message,
+):
+
+    if not message.from_user:
+        return
+
+    if not is_admin(
+        message.from_user.id
+    ):
+
+        await message.answer(
+            "⛔ Bu buyruq faqat administrator uchun."
+        )
+
+        return
+
+    total_users = len(users)
+
+    total_messages = sum(
+        user_message_counts.values()
+    )
+
+    total_photos = sum(
+        user_photo_counts.values()
+    )
+
+    total_voice = sum(
+        user_voice_counts.values()
+    )
+
+    lines = [
+        "🔐 ADMIN PANEL",
+        "",
+        f"👥 Jami foydalanuvchilar: {total_users}",
+        f"💬 Matn xabarlari: {total_messages}",
+        f"🖼 Rasmlar: {total_photos}",
+        f"🎙 Ovozli xabarlar: {total_voice}",
+        "",
+        "━━━━━━━━━━━━━━━━",
+        "👥 FOYDALANUVCHILAR:",
+        "",
+    ]
+
+    if not users:
+
+        lines.append(
+            "Hozircha foydalanuvchilar yo'q."
+        )
+
+    else:
+
+        sorted_users = sorted(
+            users.values(),
+            key=lambda user: user_message_counts.get(
+                user["id"],
+                0,
+            ),
+            reverse=True,
+        )
+
+        for number, user in enumerate(
+            sorted_users[:50],
+            start=1,
+        ):
+
+            user_id = user["id"]
+
+            name = user["name"]
+
+            username = user["username"]
+
+            messages = user_message_counts.get(
+                user_id,
+                0,
+            )
+
+            photos = user_photo_counts.get(
+                user_id,
+                0,
+            )
+
+            voice = user_voice_counts.get(
+                user_id,
+                0,
+            )
+
+            if username:
+
+                username_text = f"@{username}"
+
+            else:
+
+                username_text = "username yo'q"
+
+            lines.append(
+                f"{number}. {name}\n"
+                f"   ├ ID: {user_id}\n"
+                f"   ├ {username_text}\n"
+                f"   ├ 💬 {messages} ta\n"
+                f"   ├ 🖼 {photos} ta\n"
+                f"   └ 🎙 {voice} ta"
+            )
+
+    result = "\n".join(
+        lines
+    )
+
+    await send_long_message(
+        message,
+        result,
+    )
+
+
+# ============================================================
 # TEXT HANDLER
 # ============================================================
 
-@dp.message(
-    F.text
-)
+@dp.message(F.text)
 async def text_handler(
     message: types.Message,
 ):
 
+    if not message.from_user:
+        return
+
     user_id = message.from_user.id
+
+    register_user(
+        message.from_user
+    )
 
     user_text = message.text.strip()
 
     if not user_text:
         return
+
+    # Admin komandalariga bu handler aralashmaydi.
+    if user_text.startswith("/"):
+        return
+
+    user_message_counts[
+        user_id
+    ] += 1
+
+    logger.info(
+        "TEXT | user_id=%s | name=%s | username=@%s | text=%s",
+        user_id,
+        message.from_user.full_name,
+        message.from_user.username or "-",
+        user_text[:200],
+    )
 
     processing = await message.answer(
         "🧠 O'ylayapman..."
@@ -908,10 +882,6 @@ async def text_handler(
             else "Kechirasiz, javob bo'sh qaytdi."
         )
 
-        # ================================================
-        # MEMORY
-        # ================================================
-
         add_to_history(
             user_id,
             "user",
@@ -924,10 +894,6 @@ async def text_handler(
             answer,
         )
 
-        # ================================================
-        # REMOVE PROCESSING MESSAGE
-        # ================================================
-
         try:
 
             await processing.delete()
@@ -935,10 +901,6 @@ async def text_handler(
         except Exception:
 
             pass
-
-        # ================================================
-        # SEND ANSWER
-        # ================================================
 
         await send_long_message(
             message,
@@ -971,12 +933,30 @@ async def text_handler(
 # PHOTO HANDLER
 # ============================================================
 
-@dp.message(
-    F.photo
-)
+@dp.message(F.photo)
 async def photo_handler(
     message: types.Message,
 ):
+
+    if not message.from_user:
+        return
+
+    user_id = message.from_user.id
+
+    register_user(
+        message.from_user
+    )
+
+    user_photo_counts[
+        user_id
+    ] += 1
+
+    logger.info(
+        "PHOTO | user_id=%s | name=%s | username=@%s",
+        user_id,
+        message.from_user.full_name,
+        message.from_user.username or "-",
+    )
 
     processing = await message.answer(
         "🖼 Rasmni sinchiklab tahlil qilyapman..."
@@ -1001,9 +981,9 @@ async def photo_handler(
             if message.caption
             else
             "Ushbu rasmni batafsil tahlil qiling. "
-            "Rasmda nima borligini tushuntiring. "
-            "Agar unda matn, masala, diagramma, grafik, "
-            "hujjat yoki savol bo'lsa, uni ham tahlil qiling."
+            "Rasmda nima borligini tushuntiring va "
+            "agar unda matn, masala, diagramma yoki "
+            "savol bo'lsa, uni ham tahlil qiling."
         )
 
         image_part = genai_types.Part.from_bytes(
@@ -1052,8 +1032,7 @@ async def photo_handler(
         try:
 
             await processing.edit_text(
-                "⚠️ Rasmni tahlil qilishda texnik xatolik yuz berdi.\n\n"
-                "Bir necha soniyadan keyin yana urinib ko'ring."
+                "⚠️ Rasmni tahlil qilishda texnik xatolik yuz berdi."
             )
 
         except Exception:
@@ -1067,12 +1046,30 @@ async def photo_handler(
 # VOICE HANDLER
 # ============================================================
 
-@dp.message(
-    F.voice
-)
+@dp.message(F.voice)
 async def voice_handler(
     message: types.Message,
 ):
+
+    if not message.from_user:
+        return
+
+    user_id = message.from_user.id
+
+    register_user(
+        message.from_user
+    )
+
+    user_voice_counts[
+        user_id
+    ] += 1
+
+    logger.info(
+        "VOICE | user_id=%s | name=%s | username=@%s",
+        user_id,
+        message.from_user.full_name,
+        message.from_user.username or "-",
+    )
 
     processing = await message.answer(
         "🎙 Ovozli xabarni tinglayapman..."
@@ -1149,8 +1146,7 @@ Ushbu ovozli xabarni diqqat bilan tinglang.
 
             await processing.edit_text(
                 "⚠️ Ovozli xabarni tahlil qilishda "
-                "texnik xatolik yuz berdi.\n\n"
-                "Bir necha soniyadan keyin yana urinib ko'ring."
+                "texnik xatolik yuz berdi."
             )
 
         except Exception:
@@ -1166,31 +1162,18 @@ Ushbu ovozli xabarni diqqat bilan tinglang.
 
 async def main():
 
-    # ========================================================
-    # HEALTH SERVER
-    # ========================================================
-
     Thread(
         target=run_health_check_server,
         daemon=True,
     ).start()
-
-    # ========================================================
-    # START LOGS
-    # ========================================================
 
     logger.info(
         "Telegram AI ishga tushmoqda..."
     )
 
     logger.info(
-        "Primary model: %s",
+        "Model: %s",
         MODEL_NAME,
-    )
-
-    logger.info(
-        "Fallback models: %s",
-        FALLBACK_MODELS,
     )
 
     logger.info(
@@ -1203,17 +1186,14 @@ async def main():
         THINKING_LEVEL,
     )
 
-    # ========================================================
-    # WEBHOOK CLEANUP
-    # ========================================================
+    logger.info(
+        "Admin ID: %s",
+        ADMIN_USER_ID,
+    )
 
     await bot.delete_webhook(
         drop_pending_updates=True
     )
-
-    # ========================================================
-    # START POLLING
-    # ========================================================
 
     await dp.start_polling(
         bot
@@ -1221,7 +1201,7 @@ async def main():
 
 
 # ============================================================
-# ENTRY POINT
+# RUN
 # ============================================================
 
 if __name__ == "__main__":
