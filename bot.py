@@ -1,73 +1,51 @@
-import os
 import asyncio
+import os
 import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from threading import Thread
 from io import BytesIO
-from aiogram import Bot, Dispatcher, types, F
+
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from PIL import Image
 from google import genai
-from google.genai import types as genai_types
+from PIL import Image
 
-# Sozlamalar
-BOT_TOKEN = "8985071741:AAHZ2palM1JyEdwUSgrvlxYDsctQyw0DLb0"
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-CHANNEL_USERNAME = "@Karnay_uzb"
-
-# AI shaxsiyati va maslahatchilik qobiliyatini maksimal darajaga ko'tarish
-SYSTEM_INSTRUCTION = (
-    "Siz 'khidirov_ai' — eng kuchli, bilimdon, samimiy va intellektual AI yordamchisiz. "
-    "Foydalanuvchilarning har qanday murakkab savollariga chuqur, tahliliy, mantiqiy va "
-    "eng to'g'ri amaliy maslahatlarni bera olasiz. Muloqotni ravon o'zbek tilida olib borasiz."
-)
-
+# Logging sozlamalari
 logging.basicConfig(level=logging.INFO)
+
+# Token va API kalitlarini olish
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Google GenAI mijozini xavfsiz sozlash
-ai_client = genai.Client(
-    api_key=GEMINI_API_KEY,
-    http_options=genai_types.HttpOptions(
-        headers={"x-goog-api-key": GEMINI_API_KEY}
-    )
-)
+# Render port timeout xatoligini oldini olish uchun oddiy HTTP server
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
 
-async def check_subscription(user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        return member.status in ["creator", "administrator", "member"]
-    except Exception:
-        return True
+def run_health_check_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
 
+# /start komandasi
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
-    await message.answer(
-        f"Salom, {message.from_user.first_name}! 👋\n\n"
-        "Men **khidirov_ai** — sizning eng kuchli AI maslahatchingizman.\n"
-        "Menga istalgan savolingizni berishingiz yoki rasm yuborib tahlil qilishingiz mumkin!"
-    )
+    await message.answer("Salom! Men khidirov_ai botiman. Savolingizni yuboring yoki rasm jo'nating!")
 
-# Matnli xabarlarni qayta ishlash
+# Matnli xabarlarga javob berish (Gemini 1.5 Flash)
 @dp.message(F.text)
-async def ai_text_handler(message: types.Message):
-    if not await check_subscription(message.from_user.id):
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="📢 Kanalga obuna bo'lish", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")],
-                [InlineKeyboardButton(text="✅ Obunani tekshirish", callback_data="check_sub")]
-            ]
-        )
-        await message.answer("⚠️ Botdan foydalanish uchun kanalimizga obuna bo'ling!", reply_markup=keyboard)
-        return
-
+async def text_handler(message: types.Message):
     typing_msg = await message.answer("🤔 Fikr yuritilmoqda...")
     try:
         response = ai_client.models.generate_content(
             model="gemini-1.5-flash",
-            contents=message.text,
-            config={"system_instruction": SYSTEM_INSTRUCTION}
+            contents=message.text
         )
         await typing_msg.edit_text(response.text)
     except Exception as e:
@@ -76,10 +54,7 @@ async def ai_text_handler(message: types.Message):
 
 # Rasmlarni tahlil qilish (Multimodal AI)
 @dp.message(F.photo)
-async def ai_photo_handler(message: types.Message):
-    if not await check_subscription(message.from_user.id):
-        return
-
+async def photo_handler(message: types.Message):
     typing_msg = await message.answer("🔍 Rasm tahlil qilinmoqda...")
     try:
         photo = message.photo[-1]
@@ -87,12 +62,11 @@ async def ai_photo_handler(message: types.Message):
         downloaded_file = await bot.download_file(file_info.file_path)
         
         image = Image.open(BytesIO(downloaded_file.read()))
-        prompt = message.caption if message.caption else "Ushbu rasmni batafsil tahlil qilib bering."
-
+        prompt = message.caption if message.caption else "Ushbu rasmni batafsil tasvirlab ber."
+        
         response = ai_client.models.generate_content(
             model="gemini-1.5-flash",
-            contents=[prompt, image],
-            config={"system_instruction": SYSTEM_INSTRUCTION}
+            contents=[prompt, image]
         )
         await typing_msg.edit_text(response.text)
     except Exception as e:
@@ -100,7 +74,9 @@ async def ai_photo_handler(message: types.Message):
         await typing_msg.edit_text("Rasmni tahlil qilishda xatolik yuz berdi.")
 
 async def main():
-    print("khidirov_ai ishga tushdi...")
+    # Render portini uxlab qolmasligi uchun fonda ishga tushirish
+    Thread(target=run_health_check_server, daemon=True).start()
+    logging.info("khidirov_ai ishga tushdi...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
