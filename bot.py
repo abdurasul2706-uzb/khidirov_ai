@@ -36,11 +36,13 @@ async def start_handler(message: types.Message):
 
 @dp.message(F.text)
 async def text_handler(message: types.Message):
-    typing_msg = await message.answer("🤔 Fikr yuritilmoqda...")
+    typing_msg = await message.answer("⚡ Javob tayyorlanmoqda...")
     try:
+        # Tezroq va lo'nda javob berishi uchun stream ishlatamiz
         response = ai_client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=message.text
+            model="gemini-2.5-flash",
+            contents=message.text,
+            config={"system_instruction": "Javoblarni aniq, londa, juda chozmasdan va tez tushunarli uslubda ber."}
         )
         await typing_msg.edit_text(response.text)
     except Exception as e:
@@ -56,10 +58,10 @@ async def photo_handler(message: types.Message):
         downloaded_file = await bot.download_file(file_info.file_path)
         
         image = Image.open(BytesIO(downloaded_file.read()))
-        prompt = message.caption if message.caption else "Ushbu rasmni batafsil tasvirlab ber."
+        prompt = message.caption if message.caption else "Ushbu rasmni qisqa va aniq tasvirlab ber."
         
         response = ai_client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-2.5-flash",
             contents=[prompt, image]
         )
         await typing_msg.edit_text(response.text)
@@ -70,9 +72,10 @@ async def photo_handler(message: types.Message):
 async def main():
     Thread(target=run_health_check_server, daemon=True).start()
     logging.info("khidirov_ai ishga tushdi...")
-    # Eski kutilayotgan barcha xabarlarni o'chirib tashlaydi
+    
+    # Eski barcha seans va navbatlarni tozalash
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, skip_updates=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
