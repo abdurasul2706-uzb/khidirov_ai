@@ -10,10 +10,8 @@ from aiogram.filters import CommandStart
 from google import genai
 from PIL import Image
 
-# Logging sozlamalari
 logging.basicConfig(level=logging.INFO)
 
-# Token va API kalitlarini olish
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -21,7 +19,6 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Render port timeout xatoligini oldini olish uchun oddiy HTTP server
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -29,22 +26,20 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"OK")
 
 def run_health_check_server():
-    port = int(os.getenv("PORT", 8080))
+    port = int(os.getenv("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
 
-# /start komandasi
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
-    await message.answer("Salom! Men khidirov_ai botiman. Savolingizni yuboring yoki rasm jo'nating!")
+    await message.answer("Salom! Men khidirov_ai botiman. Savolingizni yuboring!")
 
-# Matnli xabarlarga javob berish (Gemini 1.5 Flash)
 @dp.message(F.text)
 async def text_handler(message: types.Message):
     typing_msg = await message.answer("🤔 Fikr yuritilmoqda...")
     try:
         response = ai_client.models.generate_content(
-            model="gemini-2.0-flash", 
+            model="gemini-2.5-flash",
             contents=message.text
         )
         await typing_msg.edit_text(response.text)
@@ -52,7 +47,6 @@ async def text_handler(message: types.Message):
         logging.error(f"Xatolik: {e}")
         await typing_msg.edit_text("Kechirasiz, javob tayyorlashda xatolik yuz berdi.")
 
-# Rasmlarni tahlil qilish (Multimodal AI)
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     typing_msg = await message.answer("🔍 Rasm tahlil qilinmoqda...")
@@ -65,7 +59,7 @@ async def photo_handler(message: types.Message):
         prompt = message.caption if message.caption else "Ushbu rasmni batafsil tasvirlab ber."
         
         response = ai_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[prompt, image]
         )
         await typing_msg.edit_text(response.text)
@@ -74,7 +68,6 @@ async def photo_handler(message: types.Message):
         await typing_msg.edit_text("Rasmni tahlil qilishda xatolik yuz berdi.")
 
 async def main():
-    # Render portini uxlab qolmasligi uchun fonda ishga tushirish
     Thread(target=run_health_check_server, daemon=True).start()
     logging.info("khidirov_ai ishga tushdi...")
     await dp.start_polling(bot)
