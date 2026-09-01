@@ -20,8 +20,15 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
+# Modellarning eng tezkor va universal versiyasi
 MODEL_NAME = "gemini-3.6-flash"
-SYSTEM_INSTRUCTION = "Siz o'ta aqlli va bilimdon yordamchisiz. Foydalanuvchi savollariga o'zbek tilida aniq, ravon va londa javob bering."
+
+SYSTEM_INSTRUCTION = (
+    "Siz dunyodagi eng aqlli, bilimdon va tezkor AI yordamchisiz. "
+    "Foydalanuvchining har qanday tildagi (lotin o'zbekcha, kirill o'zbekcha, ruscha, inglizcha va h.k.) "
+    "savollariga o'sha tilda mukammal, aniq va chuqur mantiqiy javob bering. "
+    "Rasmlarni o'ta aniqlik bilan tahlil qiling. Ovozli xabarlardagi har bir so'zni aniq tushunib javob qaytaring."
+)
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -36,7 +43,10 @@ def run_health_check_server():
 
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
-    await message.answer("Salom! Men sizning aqlli AI yordamchingizman. Menga matn, rasm yoki ovozli xabar yuborishingiz mumkin!")
+    await message.answer(
+        "Ассалому алайкум! Мен сизнинг энг кучли АИ ёрдамчингизман.\n"
+        "Манга матн (лотин ёки кириллда), расм ёки овозли хабар юборишингиз мумкин!"
+    )
 
 @dp.message(F.text)
 async def text_handler(message: types.Message):
@@ -53,7 +63,8 @@ async def text_handler(message: types.Message):
                 )
             )
         )
-        await typing_msg.edit_text(response.text if response.text else "Javob olishda muammo bo'ldi.")
+        text_res = response.text if response.text else "Javob olishda muammo bo'ldi."
+        await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
         logging.error(f"Matn xatoligi: {e}")
         await typing_msg.edit_text("Kechirasiz, javob tayyorlashda xatolik yuz berdi.")
@@ -68,7 +79,7 @@ async def photo_handler(message: types.Message):
         
         image_bytes = downloaded_file.read()
         image = Image.open(BytesIO(image_bytes))
-        prompt = message.caption if message.caption else "Ushbu rasmni batafsil tahlil qilib ber."
+        prompt = message.caption if message.caption else "Ushbu rasmni batafsil va mukammal tahlil qilib ber."
         
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
@@ -81,7 +92,8 @@ async def photo_handler(message: types.Message):
                 )
             )
         )
-        await typing_msg.edit_text(response.text if response.text else "Rasmni tahlil qilib bo'lmadi.")
+        text_res = response.text if response.text else "Rasmni tahlil qilib bo'lmadi."
+        await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
         logging.error(f"Rasm xatoligi: {e}")
         await typing_msg.edit_text("Rasmni tahlil qilishda xatolik yuz berdi.")
@@ -96,13 +108,13 @@ async def voice_handler(message: types.Message):
         
         audio_bytes = downloaded_file.read()
         
-        # Audio ma'lumotni Gemini API ga part sifatida uzatish
+        # Ovozli faylni Gemini multipart shaklida uzatish
         audio_part = genai_types.Part.from_bytes(
             data=audio_bytes,
             mime_type="audio/ogg"
         )
         
-        prompt = "Ushbu ovozli xabarda nima deyilganini tushunib, unga batafsil javob ber."
+        prompt = "Ushbu ovozli xabarni diqqat bilan eshitib, unda aytilgan savol yoki fikrga batafsil javob ber."
         
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
@@ -115,7 +127,8 @@ async def voice_handler(message: types.Message):
                 )
             )
         )
-        await typing_msg.edit_text(response.text if response.text else "Ovozli xabarni tushunishda muammo bo'ldi.")
+        text_res = response.text if response.text else "Ovozli xabarni tushunishda muammo bo'ldi."
+        await typing_msg.edit_text(text_res, parse_mode=None)
     except Exception as e:
         logging.error(f"Ovoz xatoligi: {e}")
         await typing_msg.edit_text("Ovozli xabarni tahlil qilishda xatolik yuz berdi.")
