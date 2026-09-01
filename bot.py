@@ -70,6 +70,8 @@ async def photo_handler(message: types.Message):
 async def main():
     Thread(target=run_health_check_server, daemon=True).start()
     logging.info("khidirov_ai ishga tushdi...")
+    # Eski kutilayotgan barcha xabarlarni o'chirib tashlaydi
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
