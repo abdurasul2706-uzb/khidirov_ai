@@ -15,6 +15,8 @@ from aiogram.filters import Command, CommandStart
 from google import genai
 from google.genai import types as genai_types
 
+from openai import OpenAI
+
 
 # ============================================================
 # LOGGING
@@ -32,9 +34,15 @@ logger = logging.getLogger("telegram-ai")
 # ENVIRONMENT
 # ============================================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv(
+    "BOT_TOKEN",
+    "",
+).strip()
 
-RAW_KEYS = os.getenv("GEMINI_API_KEY", "").strip()
+RAW_KEYS = os.getenv(
+    "GEMINI_API_KEY",
+    "",
+).strip()
 
 API_KEYS = [
     key.strip()
@@ -44,13 +52,23 @@ API_KEYS = [
 
 MODEL_NAME = os.getenv(
     "GEMINI_MODEL",
-    "gemini-3.7-flash",
+    "gemini-3.6-flash",
 ).strip()
 
 THINKING_LEVEL = os.getenv(
     "GEMINI_THINKING_LEVEL",
-    "high",
+    "medium",
 ).strip().lower()
+
+GROQ_API_KEY = os.getenv(
+    "GROQ_API_KEY",
+    "",
+).strip()
+
+GROQ_MODEL = os.getenv(
+    "GROQ_MODEL",
+    "openai/gpt-oss-120b",
+).strip()
 
 ADMIN_USER_ID_RAW = os.getenv(
     "ADMIN_USER_ID",
@@ -78,7 +96,9 @@ if not ADMIN_USER_ID_RAW:
     )
 
 try:
-    ADMIN_USER_ID = int(ADMIN_USER_ID_RAW)
+    ADMIN_USER_ID = int(
+        ADMIN_USER_ID_RAW
+    )
 except ValueError:
     raise RuntimeError(
         "ADMIN_USER_ID noto'g'ri. Masalan: 970088832"
@@ -96,6 +116,20 @@ clients = [
 
 
 # ============================================================
+# GROQ CLIENT
+# ============================================================
+
+groq_client = (
+    OpenAI(
+        api_key=GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
+    )
+    if GROQ_API_KEY
+    else None
+)
+
+
+# ============================================================
 # AI SYSTEM INSTRUCTION
 # ============================================================
 
@@ -106,6 +140,7 @@ Sizning asosiy maqsadingiz foydalanuvchining muammosini
 imkon qadar oxirigacha hal qilish.
 
 JAVOB SIFATI ENG MUHIM.
+
 
 1. TIL
 
@@ -165,6 +200,7 @@ Murakkab masalalarda esa yetarlicha batafsil tushuntiring.
 Dasturlash savollarida ishlaydigan kod yozing.
 
 Xato bo'lsa:
+
 - sababini aniqlang
 - qaysi joy xato ekanini ayting
 - to'g'ri variantni ko'rsating
@@ -374,7 +410,7 @@ def register_user(
 
 
 # ============================================================
-# GEMINI ERROR TYPE
+# ERROR TYPE
 # ============================================================
 
 def get_error_type(
@@ -387,6 +423,8 @@ def get_error_type(
         "429" in text
         or "resource_exhausted" in text
         or "quota" in text
+        or "rate limit" in text
+        or "rate_limit" in text
     ):
         return "quota"
 
@@ -394,6 +432,7 @@ def get_error_type(
         "503" in text
         or "unavailable" in text
         or "service unavailable" in text
+        or "overloaded" in text
     ):
         return "temporary"
 
@@ -401,12 +440,14 @@ def get_error_type(
         "401" in text
         or "unauthenticated" in text
         or "invalid api key" in text
+        or "invalid_api_key" in text
     ):
         return "auth"
 
     if (
         "403" in text
         or "permission denied" in text
+        or "forbidden" in text
     ):
         return "permission"
 
@@ -429,8 +470,6 @@ def generate_with_gemini(
 
     last_error = None
 
-    # Bir nechta API key bo'lsa,
-    # tasodifiy tartibda ishlatamiz.
     client_order = list(
         range(len(clients))
     )
@@ -443,8 +482,6 @@ def generate_with_gemini(
 
         client = clients[client_index]
 
-        # 503 kabi vaqtinchalik xatolarda retry.
-        # 429 quota bo'lsa retry qilib vaqtni bekorga sarflamaymiz.
         for attempt in range(1, 4):
 
             try:
@@ -498,58 +535,17 @@ def generate_with_gemini(
                     error,
                 )
 
-                # ================================================
-                # QUOTA
-                # ================================================
-
                 if error_type == "quota":
-
-                    # Shu key/project uchun quota tugagan.
-                    # Bir xil projectdagi boshqa key quota'ni
-                    # ko'paytirmaydi, shuning uchun keyingi key
-                    # bo'lsa tekshirib ko'ramiz, lekin retry qilmaymiz.
-
-                    logger.warning(
-                        "Gemini quota exceeded."
-                    )
-
                     break
-
-
-                # ================================================
-                # AUTH / PERMISSION
-                # ================================================
 
                 if error_type in (
                     "auth",
                     "permission",
                 ):
-
-                    logger.warning(
-                        "Gemini API key permission/auth error | client=%s",
-                        client_index + 1,
-                    )
-
                     break
-
-
-                # ================================================
-                # MODEL ERROR
-                # ================================================
 
                 if error_type == "model":
-
-                    logger.error(
-                        "Gemini model error: %s",
-                        MODEL_NAME,
-                    )
-
                     break
-
-
-                # ================================================
-                # TEMPORARY 503
-                # ================================================
 
                 if error_type == "temporary":
 
@@ -565,11 +561,6 @@ def generate_with_gemini(
                             0.8,
                         )
 
-                        logger.warning(
-                            "Gemini vaqtincha unavailable. %.1f sec kutamiz.",
-                            wait_seconds,
-                        )
-
                         time.sleep(
                             wait_seconds
                         )
@@ -578,23 +569,131 @@ def generate_with_gemini(
 
                     break
 
-
-                # ================================================
-                # UNKNOWN ERROR
-                # ================================================
-
                 if attempt < 3:
-
                     time.sleep(2)
-
                 else:
-
                     break
-
 
     raise RuntimeError(
         f"Gemini bilan bog'lanib bo'lmadi: {last_error}"
     )
+
+
+# ============================================================
+# GROQ REQUEST
+# ============================================================
+
+def generate_with_groq(
+    prompt: str,
+):
+
+    if not groq_client:
+        raise RuntimeError(
+            "GROQ_API_KEY mavjud emas."
+        )
+
+    logger.info(
+        "Groq request | model=%s",
+        GROQ_MODEL,
+    )
+
+    response = groq_client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": SYSTEM_INSTRUCTION,
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+    )
+
+    if not response.choices:
+        raise RuntimeError(
+            "Groq bo'sh javob qaytardi."
+        )
+
+    answer = response.choices[0].message.content
+
+    if not answer:
+        raise RuntimeError(
+            "Groq bo'sh javob qaytardi."
+        )
+
+    logger.info(
+        "Groq success | model=%s",
+        GROQ_MODEL,
+    )
+
+    return answer.strip()
+
+
+# ============================================================
+# AI ROUTER
+# ============================================================
+
+def generate_with_ai_router(
+    prompt: str,
+):
+
+    # --------------------------------------------------------
+    # 1. GEMINI
+    # --------------------------------------------------------
+
+    try:
+
+        response = generate_with_gemini(
+            prompt
+        )
+
+        answer = (
+            response.text.strip()
+            if response.text
+            else ""
+        )
+
+        if answer:
+            return answer
+
+        raise RuntimeError(
+            "Gemini bo'sh javob qaytardi."
+        )
+
+    except Exception as gemini_error:
+
+        logger.warning(
+            "Gemini ishlamadi. Groq fallback ishga tushadi. %s",
+            gemini_error,
+        )
+
+    # --------------------------------------------------------
+    # 2. GROQ FALLBACK
+    # --------------------------------------------------------
+
+    if not groq_client:
+
+        raise RuntimeError(
+            "Gemini ishlamadi va GROQ_API_KEY mavjud emas."
+        )
+
+    try:
+
+        return generate_with_groq(
+            prompt
+        )
+
+    except Exception as groq_error:
+
+        logger.exception(
+            "Gemini + Groq ikkalasi ham ishlamadi."
+        )
+
+        raise RuntimeError(
+            "Gemini ham, Groq ham javob bera olmadi."
+        ) from groq_error
 
 
 # ============================================================
@@ -610,11 +709,9 @@ def split_text(
 ) -> list[str]:
 
     if not text:
-
         return [""]
 
     if len(text) <= max_length:
-
         return [text]
 
     chunks = []
@@ -623,15 +720,12 @@ def split_text(
 
     while len(remaining) > max_length:
 
-        # Avval yangi qatordan bo'lamiz.
         cut = remaining.rfind(
             "\n",
             0,
             max_length,
         )
 
-        # Juda kichik bo'lib qolsa,
-        # bo'sh joydan bo'lamiz.
         if cut < max_length // 2:
 
             cut = remaining.rfind(
@@ -640,31 +734,19 @@ def split_text(
                 max_length,
             )
 
-        # Hech qanday qulay joy topilmasa,
-        # majburiy bo'lamiz.
         if cut < max_length // 2:
 
             cut = max_length
 
-        chunk = remaining[
-            :cut
-        ].strip()
+        chunk = remaining[:cut].strip()
 
         if chunk:
+            chunks.append(chunk)
 
-            chunks.append(
-                chunk
-            )
-
-        remaining = remaining[
-            cut:
-        ].strip()
+        remaining = remaining[cut:].strip()
 
     if remaining:
-
-        chunks.append(
-            remaining
-        )
+        chunks.append(remaining)
 
     return chunks
 
@@ -674,9 +756,7 @@ async def send_long_message(
     text: str,
 ) -> None:
 
-    chunks = split_text(
-        text
-    )
+    chunks = split_text(text)
 
     for chunk in chunks:
 
@@ -707,7 +787,9 @@ class HealthCheckHandler(
 
     def do_GET(self):
 
-        self.send_response(200)
+        self.send_response(
+            200
+        )
 
         self.send_header(
             "Content-Type",
@@ -722,7 +804,9 @@ class HealthCheckHandler(
 
     def do_HEAD(self):
 
-        self.send_response(200)
+        self.send_response(
+            200
+        )
 
         self.end_headers()
 
@@ -775,13 +859,14 @@ def is_admin(
 # /START
 # ============================================================
 
-@dp.message(CommandStart())
+@dp.message(
+    CommandStart()
+)
 async def start_handler(
     message: types.Message,
 ):
 
     if message.from_user:
-
         register_user(
             message.from_user
         )
@@ -807,13 +892,14 @@ async def start_handler(
 # /HELP
 # ============================================================
 
-@dp.message(Command("help"))
+@dp.message(
+    Command("help")
+)
 async def help_handler(
     message: types.Message,
 ):
 
     if message.from_user:
-
         register_user(
             message.from_user
         )
@@ -836,13 +922,14 @@ async def help_handler(
 # /ID
 # ============================================================
 
-@dp.message(Command("id"))
+@dp.message(
+    Command("id")
+)
 async def id_handler(
     message: types.Message,
 ):
 
     if not message.from_user:
-
         return
 
     register_user(
@@ -859,13 +946,14 @@ async def id_handler(
 # /RESET
 # ============================================================
 
-@dp.message(Command("reset"))
+@dp.message(
+    Command("reset")
+)
 async def reset_handler(
     message: types.Message,
 ):
 
     if not message.from_user:
-
         return
 
     register_user(
@@ -886,13 +974,14 @@ async def reset_handler(
 # /USERS
 # ============================================================
 
-@dp.message(Command("users"))
+@dp.message(
+    Command("users")
+)
 async def users_handler(
     message: types.Message,
 ):
 
     if not message.from_user:
-
         return
 
     if not is_admin(
@@ -960,7 +1049,9 @@ async def users_handler(
 
         user_id = user["id"]
 
-        username = user["username"]
+        username = user[
+            "username"
+        ]
 
         username_text = (
             f"@{username}"
@@ -993,13 +1084,14 @@ async def users_handler(
 # TEXT HANDLER
 # ============================================================
 
-@dp.message(F.text)
+@dp.message(
+    F.text
+)
 async def text_handler(
     message: types.Message,
 ):
 
     if not message.from_user:
-
         return
 
     user_id = message.from_user.id
@@ -1008,15 +1100,14 @@ async def text_handler(
         message.from_user
     )
 
-    user_text = message.text.strip()
+    user_text = (
+        message.text.strip()
+    )
 
     if not user_text:
-
         return
 
-    # Komandalarni o'tkazib yuboramiz.
     if user_text.startswith("/"):
-
         return
 
     user_message_counts[
@@ -1044,20 +1135,18 @@ async def text_handler(
 
         loop = asyncio.get_running_loop()
 
-        response = await loop.run_in_executor(
+        answer = await loop.run_in_executor(
             None,
-            lambda: generate_with_gemini(
+            lambda: generate_with_ai_router(
                 prompt
             ),
         )
 
-        answer = (
-            response.text.strip()
-            if response.text
-            else "Kechirasiz, javob bo'sh qaytdi."
-        )
+        if not answer:
+            answer = (
+                "Kechirasiz, javob bo'sh qaytdi."
+            )
 
-        # Faqat muvaffaqiyatli javobdan keyin memory'ga yozamiz.
         add_to_history(
             user_id,
             "user",
@@ -1097,16 +1186,15 @@ async def text_handler(
         if error_type == "quota":
 
             user_error = (
-                "⏳ Hozircha AI xizmatining quota limiti tugagan.\n\n"
-                "Bu botdagi xato emas — Gemini API limitiga "
-                "yetib qoldik.\n\n"
-                "Keyinroq yana urinib ko'ring."
+                "⏳ Hozircha AI xizmatlarining "
+                "limitiga yetildi.\n\n"
+                "Birozdan keyin yana urinib ko'ring."
             )
 
         elif error_type == "temporary":
 
             user_error = (
-                "⏳ Gemini serveri hozircha band.\n\n"
+                "⏳ AI serverlari vaqtincha band.\n\n"
                 "Bir necha soniyadan keyin yana urinib ko'ring."
             )
 
@@ -1116,15 +1204,15 @@ async def text_handler(
         ):
 
             user_error = (
-                "🔐 Gemini API kaliti yoki ruxsat bilan bog'liq "
-                "muammo yuz berdi.\n\n"
+                "🔐 AI API kaliti yoki ruxsat bilan "
+                "bog'liq muammo yuz berdi.\n\n"
                 "Administrator API sozlamalarini tekshirishi kerak."
             )
 
         elif error_type == "model":
 
             user_error = (
-                "⚠️ Gemini modeli bilan bog'liq muammo yuz berdi.\n\n"
+                "⚠️ AI modeli bilan bog'liq muammo yuz berdi.\n\n"
                 "Administrator model sozlamasini tekshirishi kerak."
             )
 
@@ -1152,13 +1240,14 @@ async def text_handler(
 # PHOTO HANDLER
 # ============================================================
 
-@dp.message(F.photo)
+@dp.message(
+    F.photo
+)
 async def photo_handler(
     message: types.Message,
 ):
 
     if not message.from_user:
-
         return
 
     user_id = message.from_user.id
@@ -1198,7 +1287,9 @@ async def photo_handler(
 
         if message.caption:
 
-            prompt = message.caption.strip()
+            prompt = (
+                message.caption.strip()
+            )
 
         else:
 
@@ -1308,13 +1399,14 @@ rasm haqida eng muhim va foydali ma'lumotlarni bering.
 # VOICE HANDLER
 # ============================================================
 
-@dp.message(F.voice)
+@dp.message(
+    F.voice
+)
 async def voice_handler(
     message: types.Message,
 ):
 
     if not message.from_user:
-
         return
 
     user_id = message.from_user.id
@@ -1449,7 +1541,6 @@ Ushbu ovozli xabarni diqqat bilan tinglang.
 
 async def main():
 
-    # Render health check.
     Thread(
         target=run_health_check_server,
         daemon=True,
@@ -1464,7 +1555,7 @@ async def main():
     )
 
     logger.info(
-        "Model: %s",
+        "Gemini model: %s",
         MODEL_NAME,
     )
 
@@ -1474,8 +1565,18 @@ async def main():
     )
 
     logger.info(
-        "API clients: %s",
+        "Gemini API clients: %s",
         len(clients),
+    )
+
+    logger.info(
+        "Groq enabled: %s",
+        bool(groq_client),
+    )
+
+    logger.info(
+        "Groq model: %s",
+        GROQ_MODEL,
     )
 
     logger.info(
@@ -1487,7 +1588,6 @@ async def main():
         "========================================"
     )
 
-    # Eski webhook/pending update'larni tozalash.
     await bot.delete_webhook(
         drop_pending_updates=True
     )
