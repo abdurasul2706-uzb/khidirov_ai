@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import os
 import random
@@ -68,6 +69,16 @@ GROQ_API_KEY = os.getenv(
 GROQ_MODEL = os.getenv(
     "GROQ_MODEL",
     "openai/gpt-oss-120b",
+).strip()
+
+GROQ_VISION_MODEL = os.getenv(
+    "GROQ_VISION_MODEL",
+    "qwen/qwen3.6-27b",
+).strip()
+
+GROQ_WHISPER_MODEL = os.getenv(
+    "GROQ_WHISPER_MODEL",
+    "whisper-large-v3-turbo",
 ).strip()
 
 ADMIN_USER_ID_RAW = os.getenv(
@@ -271,7 +282,10 @@ Kerak bo'lmasa haddan tashqari formatlamang.
 # USER MEMORY
 # ============================================================
 
-user_histories: dict[int, list[dict[str, str]]] = defaultdict(list)
+user_histories: dict[
+    int,
+    list[dict[str, str]]
+] = defaultdict(list)
 
 MAX_HISTORY_MESSAGES = 12
 
@@ -292,7 +306,10 @@ def add_to_history(
     )
 
     if len(history) > MAX_HISTORY_MESSAGES:
-        del history[:-MAX_HISTORY_MESSAGES]
+
+        del history[
+            :-MAX_HISTORY_MESSAGES
+        ]
 
 
 def build_prompt(
@@ -360,11 +377,25 @@ def reset_user_memory(
 # USER STATISTICS
 # ============================================================
 
-users: dict[int, dict[str, Any]] = {}
+users: dict[
+    int,
+    dict[str, Any]
+] = {}
 
-user_message_counts: dict[int, int] = defaultdict(int)
-user_photo_counts: dict[int, int] = defaultdict(int)
-user_voice_counts: dict[int, int] = defaultdict(int)
+user_message_counts: dict[
+    int,
+    int
+] = defaultdict(int)
+
+user_photo_counts: dict[
+    int,
+    int
+] = defaultdict(int)
+
+user_voice_counts: dict[
+    int,
+    int
+] = defaultdict(int)
 
 
 def register_user(
@@ -480,7 +511,9 @@ def generate_with_gemini(
 
     for client_index in client_order:
 
-        client = clients[client_index]
+        client = clients[
+            client_index
+        ]
 
         for attempt in range(1, 4):
 
@@ -535,16 +568,12 @@ def generate_with_gemini(
                     error,
                 )
 
-                if error_type == "quota":
-                    break
-
                 if error_type in (
+                    "quota",
                     "auth",
                     "permission",
+                    "model",
                 ):
-                    break
-
-                if error_type == "model":
                     break
 
                 if error_type == "temporary":
@@ -570,8 +599,13 @@ def generate_with_gemini(
                     break
 
                 if attempt < 3:
-                    time.sleep(2)
+
+                    time.sleep(
+                        2
+                    )
+
                 else:
+
                     break
 
     raise RuntimeError(
@@ -580,7 +614,7 @@ def generate_with_gemini(
 
 
 # ============================================================
-# GROQ REQUEST
+# GROQ TEXT
 # ============================================================
 
 def generate_with_groq(
@@ -588,12 +622,13 @@ def generate_with_groq(
 ):
 
     if not groq_client:
+
         raise RuntimeError(
             "GROQ_API_KEY mavjud emas."
         )
 
     logger.info(
-        "Groq request | model=%s",
+        "Groq text request | model=%s",
         GROQ_MODEL,
     )
 
@@ -612,36 +647,153 @@ def generate_with_groq(
     )
 
     if not response.choices:
+
         raise RuntimeError(
             "Groq bo'sh javob qaytardi."
         )
 
-    answer = response.choices[0].message.content
+    answer = (
+        response.choices[0]
+        .message.content
+    )
 
     if not answer:
+
         raise RuntimeError(
             "Groq bo'sh javob qaytardi."
         )
-
-    logger.info(
-        "Groq success | model=%s",
-        GROQ_MODEL,
-    )
 
     return answer.strip()
 
 
 # ============================================================
-# AI ROUTER
+# GROQ VISION
+# ============================================================
+
+def generate_with_groq_vision(
+    image_bytes: bytes,
+    prompt: str,
+):
+
+    if not groq_client:
+
+        raise RuntimeError(
+            "GROQ_API_KEY mavjud emas."
+        )
+
+    image_base64 = base64.b64encode(
+        image_bytes
+    ).decode(
+        "utf-8"
+    )
+
+    image_url = (
+        "data:image/jpeg;base64,"
+        + image_base64
+    )
+
+    logger.info(
+        "Groq vision request | model=%s",
+        GROQ_VISION_MODEL,
+    )
+
+    response = groq_client.chat.completions.create(
+        model=GROQ_VISION_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": SYSTEM_INSTRUCTION,
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_url,
+                        },
+                    },
+                ],
+            },
+        ],
+    )
+
+    if not response.choices:
+
+        raise RuntimeError(
+            "Groq Vision bo'sh javob qaytardi."
+        )
+
+    answer = (
+        response.choices[0]
+        .message.content
+    )
+
+    if not answer:
+
+        raise RuntimeError(
+            "Groq Vision bo'sh javob qaytardi."
+        )
+
+    return answer.strip()
+
+
+# ============================================================
+# GROQ WHISPER
+# ============================================================
+
+def transcribe_with_groq(
+    audio_bytes: bytes,
+):
+
+    if not groq_client:
+
+        raise RuntimeError(
+            "GROQ_API_KEY mavjud emas."
+        )
+
+    logger.info(
+        "Groq Whisper request | model=%s",
+        GROQ_WHISPER_MODEL,
+    )
+
+    transcription = (
+        groq_client.audio.transcriptions.create(
+            file=(
+                "voice.ogg",
+                audio_bytes,
+            ),
+            model=GROQ_WHISPER_MODEL,
+            response_format="json",
+        )
+    )
+
+    text = getattr(
+        transcription,
+        "text",
+        None,
+    )
+
+    if not text:
+
+        raise RuntimeError(
+            "Whisper transkripsiyasi bo'sh."
+        )
+
+    return text.strip()
+
+
+# ============================================================
+# AI TEXT ROUTER
 # ============================================================
 
 def generate_with_ai_router(
     prompt: str,
 ):
-
-    # --------------------------------------------------------
-    # 1. GEMINI
-    # --------------------------------------------------------
 
     try:
 
@@ -656,6 +808,7 @@ def generate_with_ai_router(
         )
 
         if answer:
+
             return answer
 
         raise RuntimeError(
@@ -665,35 +818,172 @@ def generate_with_ai_router(
     except Exception as gemini_error:
 
         logger.warning(
-            "Gemini ishlamadi. Groq fallback ishga tushadi. %s",
+            "Gemini text ishlamadi. "
+            "Groq fallback: %s",
+            gemini_error,
+        )
+
+    return generate_with_groq(
+        prompt
+    )
+
+
+# ============================================================
+# AI IMAGE ROUTER
+# ============================================================
+
+def generate_with_image_router(
+    prompt: str,
+    image_bytes: bytes,
+):
+
+    # --------------------------------------------------------
+    # GEMINI
+    # --------------------------------------------------------
+
+    try:
+
+        image_part = genai_types.Part.from_bytes(
+            data=image_bytes,
+            mime_type="image/jpeg",
+        )
+
+        response = generate_with_gemini(
+            [
+                prompt,
+                image_part,
+            ]
+        )
+
+        answer = (
+            response.text.strip()
+            if response.text
+            else ""
+        )
+
+        if answer:
+
+            return answer
+
+        raise RuntimeError(
+            "Gemini Vision bo'sh javob qaytardi."
+        )
+
+    except Exception as gemini_error:
+
+        logger.warning(
+            "Gemini Vision ishlamadi. "
+            "Groq Vision fallback: %s",
             gemini_error,
         )
 
     # --------------------------------------------------------
-    # 2. GROQ FALLBACK
+    # GROQ VISION
     # --------------------------------------------------------
 
-    if not groq_client:
+    return generate_with_groq_vision(
+        image_bytes,
+        prompt,
+    )
 
-        raise RuntimeError(
-            "Gemini ishlamadi va GROQ_API_KEY mavjud emas."
-        )
+
+# ============================================================
+# AI VOICE ROUTER
+# ============================================================
+
+def generate_with_voice_router(
+    audio_bytes: bytes,
+):
+
+    # --------------------------------------------------------
+    # 1. GEMINI AUDIO
+    # --------------------------------------------------------
+
+    prompt = """
+Ushbu ovozli xabarni diqqat bilan tinglang.
+
+1. Foydalanuvchining nutqini tushuning.
+2. Uning savoli yoki topshirig'ini aniqlang.
+3. Agar topshiriq bo'lsa, uni bajaring.
+4. Faqat transkripsiya bilan cheklanmay,
+   imkon qadar topshiriqni bajaring.
+5. Javobni foydalanuvchi gapirgan asosiy tilda bering.
+"""
 
     try:
 
-        return generate_with_groq(
-            prompt
+        audio_part = genai_types.Part.from_bytes(
+            data=audio_bytes,
+            mime_type="audio/ogg",
         )
 
-    except Exception as groq_error:
-
-        logger.exception(
-            "Gemini + Groq ikkalasi ham ishlamadi."
+        response = generate_with_gemini(
+            [
+                prompt,
+                audio_part,
+            ]
         )
+
+        answer = (
+            response.text.strip()
+            if response.text
+            else ""
+        )
+
+        if answer:
+
+            return answer
 
         raise RuntimeError(
-            "Gemini ham, Groq ham javob bera olmadi."
-        ) from groq_error
+            "Gemini audio bo'sh javob qaytardi."
+        )
+
+    except Exception as gemini_error:
+
+        logger.warning(
+            "Gemini Audio ishlamadi. "
+            "Groq Whisper fallback: %s",
+            gemini_error,
+        )
+
+    # --------------------------------------------------------
+    # 2. WHISPER
+    # --------------------------------------------------------
+
+    transcript = transcribe_with_groq(
+        audio_bytes
+    )
+
+    logger.info(
+        "Whisper transcript: %s",
+        transcript[:500],
+    )
+
+    # --------------------------------------------------------
+    # 3. GROQ TEXT
+    # --------------------------------------------------------
+
+    final_prompt = f"""
+Quyidagi matn foydalanuvchining ovozli xabaridan
+Whisper orqali olingan transkripsiyadir.
+
+TRANSKRIPSIYA:
+
+{transcript}
+
+TOPSHIRIQ:
+
+Foydalanuvchining asl maqsadini tushuning.
+Agar savol yoki topshiriq bo'lsa, uni bajaring.
+
+Faqat transkripsiyani qaytarmang.
+
+Javobni foydalanuvchining asosiy tilida bering.
+"""
+
+    return generate_with_groq(
+        final_prompt
+    )
 
 
 # ============================================================
@@ -709,9 +999,11 @@ def split_text(
 ) -> list[str]:
 
     if not text:
+
         return [""]
 
     if len(text) <= max_length:
+
         return [text]
 
     chunks = []
@@ -738,15 +1030,27 @@ def split_text(
 
             cut = max_length
 
-        chunk = remaining[:cut].strip()
+        chunk = (
+            remaining[:cut]
+            .strip()
+        )
 
         if chunk:
-            chunks.append(chunk)
 
-        remaining = remaining[cut:].strip()
+            chunks.append(
+                chunk
+            )
+
+        remaining = (
+            remaining[cut:]
+            .strip()
+        )
 
     if remaining:
-        chunks.append(remaining)
+
+        chunks.append(
+            remaining
+        )
 
     return chunks
 
@@ -756,7 +1060,9 @@ async def send_long_message(
     text: str,
 ) -> None:
 
-    chunks = split_text(text)
+    chunks = split_text(
+        text
+    )
 
     for chunk in chunks:
 
@@ -845,7 +1151,7 @@ def run_health_check_server():
 
 
 # ============================================================
-# ADMIN CHECK
+# ADMIN
 # ============================================================
 
 def is_admin(
@@ -856,7 +1162,7 @@ def is_admin(
 
 
 # ============================================================
-# /START
+# START
 # ============================================================
 
 @dp.message(
@@ -867,6 +1173,7 @@ async def start_handler(
 ):
 
     if message.from_user:
+
         register_user(
             message.from_user
         )
@@ -889,7 +1196,7 @@ async def start_handler(
 
 
 # ============================================================
-# /HELP
+# HELP
 # ============================================================
 
 @dp.message(
@@ -900,6 +1207,7 @@ async def help_handler(
 ):
 
     if message.from_user:
+
         register_user(
             message.from_user
         )
@@ -919,7 +1227,7 @@ async def help_handler(
 
 
 # ============================================================
-# /ID
+# ID
 # ============================================================
 
 @dp.message(
@@ -930,6 +1238,7 @@ async def id_handler(
 ):
 
     if not message.from_user:
+
         return
 
     register_user(
@@ -943,7 +1252,7 @@ async def id_handler(
 
 
 # ============================================================
-# /RESET
+# RESET
 # ============================================================
 
 @dp.message(
@@ -954,6 +1263,7 @@ async def reset_handler(
 ):
 
     if not message.from_user:
+
         return
 
     register_user(
@@ -971,7 +1281,7 @@ async def reset_handler(
 
 
 # ============================================================
-# /USERS
+# USERS
 # ============================================================
 
 @dp.message(
@@ -982,6 +1292,7 @@ async def users_handler(
 ):
 
     if not message.from_user:
+
         return
 
     if not is_admin(
@@ -1092,6 +1403,7 @@ async def text_handler(
 ):
 
     if not message.from_user:
+
         return
 
     user_id = message.from_user.id
@@ -1105,22 +1417,16 @@ async def text_handler(
     )
 
     if not user_text:
+
         return
 
     if user_text.startswith("/"):
+
         return
 
     user_message_counts[
         user_id
     ] += 1
-
-    logger.info(
-        "TEXT | user_id=%s | name=%s | username=@%s | text=%s",
-        user_id,
-        message.from_user.full_name,
-        message.from_user.username or "-",
-        user_text[:300],
-    )
 
     processing = await message.answer(
         "🧠 O'ylayapman..."
@@ -1141,11 +1447,6 @@ async def text_handler(
                 prompt
             ),
         )
-
-        if not answer:
-            answer = (
-                "Kechirasiz, javob bo'sh qaytdi."
-            )
 
         add_to_history(
             user_id,
@@ -1175,64 +1476,20 @@ async def text_handler(
     except Exception as error:
 
         logger.exception(
-            "Text handler error",
-            exc_info=error,
+            "Text handler error"
         )
-
-        error_type = get_error_type(
-            error
-        )
-
-        if error_type == "quota":
-
-            user_error = (
-                "⏳ Hozircha AI xizmatlarining "
-                "limitiga yetildi.\n\n"
-                "Birozdan keyin yana urinib ko'ring."
-            )
-
-        elif error_type == "temporary":
-
-            user_error = (
-                "⏳ AI serverlari vaqtincha band.\n\n"
-                "Bir necha soniyadan keyin yana urinib ko'ring."
-            )
-
-        elif error_type in (
-            "auth",
-            "permission",
-        ):
-
-            user_error = (
-                "🔐 AI API kaliti yoki ruxsat bilan "
-                "bog'liq muammo yuz berdi.\n\n"
-                "Administrator API sozlamalarini tekshirishi kerak."
-            )
-
-        elif error_type == "model":
-
-            user_error = (
-                "⚠️ AI modeli bilan bog'liq muammo yuz berdi.\n\n"
-                "Administrator model sozlamasini tekshirishi kerak."
-            )
-
-        else:
-
-            user_error = (
-                "⚠️ Hozircha javob olishda texnik muammo yuz berdi.\n\n"
-                "Bir necha soniyadan keyin yana urinib ko'ring."
-            )
 
         try:
 
             await processing.edit_text(
-                user_error
+                "⚠️ Hozircha javob olishda texnik muammo yuz berdi.\n\n"
+                "Birozdan keyin yana urinib ko'ring."
             )
 
         except Exception:
 
             await message.answer(
-                user_error
+                "⚠️ Texnik xatolik yuz berdi."
             )
 
 
@@ -1248,6 +1505,7 @@ async def photo_handler(
 ):
 
     if not message.from_user:
+
         return
 
     user_id = message.from_user.id
@@ -1259,13 +1517,6 @@ async def photo_handler(
     user_photo_counts[
         user_id
     ] += 1
-
-    logger.info(
-        "PHOTO | user_id=%s | name=%s | username=@%s",
-        user_id,
-        message.from_user.full_name,
-        message.from_user.username or "-",
-    )
 
     processing = await message.answer(
         "🖼 Rasmni sinchiklab tahlil qilyapman..."
@@ -1283,7 +1534,9 @@ async def photo_handler(
             file_info.file_path
         )
 
-        image_bytes = downloaded_file.read()
+        image_bytes = (
+            downloaded_file.read()
+        )
 
         if message.caption:
 
@@ -1314,27 +1567,14 @@ Agar foydalanuvchi savol bermagan bo'lsa,
 rasm haqida eng muhim va foydali ma'lumotlarni bering.
 """
 
-        image_part = genai_types.Part.from_bytes(
-            data=image_bytes,
-            mime_type="image/jpeg",
-        )
-
         loop = asyncio.get_running_loop()
 
-        response = await loop.run_in_executor(
+        answer = await loop.run_in_executor(
             None,
-            lambda: generate_with_gemini(
-                [
-                    prompt,
-                    image_part,
-                ]
+            lambda: generate_with_image_router(
+                prompt,
+                image_bytes,
             ),
-        )
-
-        answer = (
-            response.text.strip()
-            if response.text
-            else "Rasmni tahlil qilib bo'lmadi."
         )
 
         try:
@@ -1353,45 +1593,19 @@ rasm haqida eng muhim va foydali ma'lumotlarni bering.
     except Exception as error:
 
         logger.exception(
-            "Photo handler error",
-            exc_info=error,
+            "Photo handler error"
         )
-
-        error_type = get_error_type(
-            error
-        )
-
-        if error_type == "quota":
-
-            user_error = (
-                "⏳ Hozircha rasm tahlili uchun "
-                "Gemini quota limiti tugagan."
-            )
-
-        elif error_type == "temporary":
-
-            user_error = (
-                "⏳ Gemini serveri vaqtincha band.\n"
-                "Birozdan keyin yana urinib ko'ring."
-            )
-
-        else:
-
-            user_error = (
-                "⚠️ Rasmni tahlil qilishda "
-                "texnik xatolik yuz berdi."
-            )
 
         try:
 
             await processing.edit_text(
-                user_error
+                "⚠️ Rasmni tahlil qilishda texnik muammo yuz berdi."
             )
 
         except Exception:
 
             await message.answer(
-                user_error
+                "⚠️ Rasmni tahlil qilib bo'lmadi."
             )
 
 
@@ -1407,6 +1621,7 @@ async def voice_handler(
 ):
 
     if not message.from_user:
+
         return
 
     user_id = message.from_user.id
@@ -1418,13 +1633,6 @@ async def voice_handler(
     user_voice_counts[
         user_id
     ] += 1
-
-    logger.info(
-        "VOICE | user_id=%s | name=%s | username=@%s",
-        user_id,
-        message.from_user.full_name,
-        message.from_user.username or "-",
-    )
 
     processing = await message.answer(
         "🎙 Ovozli xabarni tinglayapman..."
@@ -1442,39 +1650,17 @@ async def voice_handler(
             file_info.file_path
         )
 
-        audio_bytes = downloaded_file.read()
-
-        audio_part = genai_types.Part.from_bytes(
-            data=audio_bytes,
-            mime_type="audio/ogg",
+        audio_bytes = (
+            downloaded_file.read()
         )
-
-        prompt = """
-Ushbu ovozli xabarni diqqat bilan tinglang.
-
-1. Foydalanuvchining nutqini tushuning.
-2. Uning savoli yoki topshirig'ini aniqlang.
-3. Agar topshiriq bo'lsa, uni bajaring.
-4. Faqat transkripsiya bilan cheklanib qolmang.
-5. Javobni foydalanuvchi gapirgan asosiy tilda bering.
-"""
 
         loop = asyncio.get_running_loop()
 
-        response = await loop.run_in_executor(
+        answer = await loop.run_in_executor(
             None,
-            lambda: generate_with_gemini(
-                [
-                    prompt,
-                    audio_part,
-                ]
+            lambda: generate_with_voice_router(
+                audio_bytes
             ),
-        )
-
-        answer = (
-            response.text.strip()
-            if response.text
-            else "Ovozli xabarni tushunib bo'lmadi."
         )
 
         try:
@@ -1493,45 +1679,19 @@ Ushbu ovozli xabarni diqqat bilan tinglang.
     except Exception as error:
 
         logger.exception(
-            "Voice handler error",
-            exc_info=error,
+            "Voice handler error"
         )
-
-        error_type = get_error_type(
-            error
-        )
-
-        if error_type == "quota":
-
-            user_error = (
-                "⏳ Hozircha ovoz tahlili uchun "
-                "Gemini quota limiti tugagan."
-            )
-
-        elif error_type == "temporary":
-
-            user_error = (
-                "⏳ Gemini serveri vaqtincha band.\n"
-                "Birozdan keyin yana urinib ko'ring."
-            )
-
-        else:
-
-            user_error = (
-                "⚠️ Ovozli xabarni tahlil qilishda "
-                "texnik xatolik yuz berdi."
-            )
 
         try:
 
             await processing.edit_text(
-                user_error
+                "⚠️ Ovozli xabarni tahlil qilishda texnik muammo yuz berdi."
             )
 
         except Exception:
 
             await message.answer(
-                user_error
+                "⚠️ Ovozli xabarni tushunib bo'lmadi."
             )
 
 
@@ -1565,7 +1725,7 @@ async def main():
     )
 
     logger.info(
-        "Gemini API clients: %s",
+        "Gemini clients: %s",
         len(clients),
     )
 
@@ -1575,8 +1735,18 @@ async def main():
     )
 
     logger.info(
-        "Groq model: %s",
+        "Groq text model: %s",
         GROQ_MODEL,
+    )
+
+    logger.info(
+        "Groq vision model: %s",
+        GROQ_VISION_MODEL,
+    )
+
+    logger.info(
+        "Groq Whisper model: %s",
+        GROQ_WHISPER_MODEL,
     )
 
     logger.info(
