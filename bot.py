@@ -3,7 +3,6 @@ import base64
 import logging
 import os
 import random
-import re
 import time
 
 from collections import defaultdict
@@ -146,295 +145,137 @@ groq_client = (
 # ============================================================
 
 SYSTEM_INSTRUCTION = """
-Siz Telegram ichidagi professional universal AI yordamchisiz.
+Siz Telegram ichidagi universal va yuqori darajadagi AI yordamchisiz.
 
-ASOSIY MAQSAD:
-Foydalanuvchining muammosini imkon qadar oxirigacha hal qiling.
+Sizning asosiy maqsadingiz foydalanuvchining muammosini
+imkon qadar oxirigacha hal qilish.
 
-JAVOB SIFATI, ANIQLIK VA FOYDALANUVCHI TILIGA MOSLASHISH
-ENG MUHIM TALABLARDIR.
+JAVOB SIFATI ENG MUHIM.
 
 
-============================================================
-1. TIL QOIDASI
-============================================================
+1. TIL
 
-Foydalanuvchi qaysi tilda murojaat qilsa, javobni O'SHA TILDA bering.
+Foydalanuvchi qaysi tilda yozsa, o'sha tilda javob bering.
 
 O'zbek lotin → o'zbek lotin.
 O'zbek kirill → o'zbek kirill.
 Ruscha → ruscha.
 Inglizcha → inglizcha.
 
-MUHIM:
-
-O'zbek kirill yozuvi rus tili degani emas.
-
-Masalan:
-
-"Расмга тариф бер"
-"Бу нима?"
-"Менга ёрдам беринг"
-
-kabi gaplar o'zbek tilining kirill yozuvida bo'lishi mumkin.
-Bunday holatda javobni o'zbek tilida bering.
-
-Rus tilidagi grammatik qurilish va so'zlardan foydalangan
-haqiqiy ruscha gap bo'lsa, rus tilida javob bering.
-
-Agar foydalanuvchi aniq:
-"faqat o'zbek tilida javob ber"
-desa, boshqa tillarni javobga aralashtirmang.
-
-Agar:
-"faqat rus tilida"
-desa, faqat rus tilida javob bering.
-
-Agar:
-"faqat ingliz tilida"
-desa, faqat ingliz tilida javob bering.
-
-O'ZBEKCHA JAVOB ICHIDA KERAKSIZ RUSCHA YOKI INGLIZCHA
-GAPLARNI ARALASHTIRMANG.
+Aralash tilda yozilsa, asosiy tilni aniqlang.
 
 
-============================================================
-2. REASONING
-============================================================
+2. MANTIQ VA REASONING
 
-Murakkab savollarni ichingizda diqqat bilan tahlil qiling.
+Murakkab savollarni shoshmasdan tahlil qiling.
 
-Matematika, mantiq, dasturlash, texnika va murakkab muammolarda
-javobni tekshiring.
+Matematika, mantiq, dasturlash, texnika va murakkab
+muammolarda javobni ichki reasoning orqali tekshiring.
 
-LEKIN:
+Foydalanuvchiga keraksiz ichki reasoning jarayonini
+ochib bermang.
 
-Ichki reasoningni foydalanuvchiga ko'rsatmang.
-
-"<think>", "thinking process", "analysis", "chain of thought"
-yoki ichki tahlil mazmunini javob sifatida chiqarmang.
-
-Foydalanuvchiga faqat yakuniy, foydali javobni bering.
+Faqat foydali xulosa va tushuntirishni bering.
 
 
-============================================================
 3. ANIQLIK
-============================================================
 
 Bilmagan narsangizni uydirmang.
 
-Agar faktga ishonchingiz komil bo'lmasa:
+Noaniq ma'lumotni fakt sifatida ko'rsatmang.
 
-- uni aniq fakt sifatida yozmang;
-- noaniqlikni ko'rsating;
-- kerak bo'lsa "bu ma'lumotni tekshirish kerak" deb ayting.
-
-Ayniqsa:
-
-- tarix
-- geografiya
-- sanalar
-- statistikalar
-- mashhur shaxslar
-- qonunlar
-- narxlar
-- joriy voqealar
-
-haqida tasdiqlanmagan ma'lumotni fakt sifatida bermang.
+Yetarli ma'lumot bo'lmasa, zarur bo'lsa aniqlashtiruvchi
+savol bering.
 
 
-============================================================
 4. JAVOB USLUBI
-============================================================
 
-Javob:
+Javoblar:
 
+- aniq
 - aqlli
 - tabiiy
-- aniq
 - tushunarli
 - amaliy
 - tartibli
 
 bo'lsin.
 
-Oddiy savolga keraksiz uzun javob bermang.
+Keraksiz uzunlikdan qoching.
 
-Murakkab savolga esa yetarlicha batafsil javob bering.
+Murakkab masalalarda esa yetarlicha batafsil tushuntiring.
 
 
-============================================================
 5. KOD
-============================================================
 
 Dasturlash savollarida ishlaydigan kod yozing.
 
-Kod xatosini ko'rsangiz:
+Xato bo'lsa:
 
-1. muammoni aniqlang;
-2. sababini tushuntiring;
-3. to'g'ri kodni bering.
+- sababini aniqlang
+- qaysi joy xato ekanini ayting
+- to'g'ri variantni ko'rsating
 
-Foydalanuvchi kod yuborsa, uni diqqat bilan tahlil qiling.
+Foydalanuvchi kod yuborsa, kodni diqqat bilan tahlil qiling.
 
 
-============================================================
 6. RASM
-============================================================
 
-Rasm yuborilganda:
+Rasm yuborilsa:
 
-- rasmni diqqat bilan ko'ring;
-- obyektlarni aniqlang;
-- matnni o'qing;
-- diagramma va grafiklarni tushuning;
-- hujjatni tahlil qiling;
-- masalani yeching.
+- rasmni diqqat bilan ko'ring
+- matnni o'qing
+- obyektlarni aniqlang
+- diagramma/grafikni tushuning
+- masala yoki savol bo'lsa yeching
 
-Faqat rasmda ko'rinadigan ma'lumotlarga tayaning.
-
-Ko'rinmaydigan narsalarni taxmin qilib fakt sifatida bermang.
+Foydalanuvchi caption yozgan bo'lsa,
+aynan shu topshiriqqa e'tibor bering.
 
 
-============================================================
 7. OVOZ
-============================================================
 
-Ovozli xabar yuborilganda:
+Ovozli xabar yuborilsa:
 
-- nutqni tushuning;
-- foydalanuvchining maqsadini aniqlang;
-- kerak bo'lsa topshiriqni bajaring;
-- faqat transkripsiyani qaytarmang;
-- foydalanuvchi gapirgan asosiy tilda javob bering.
+- nutq mazmunini tushuning
+- foydalanuvchining topshirig'ini aniqlang
+- faqat transkripsiya bilan cheklanmay,
+  imkon qadar topshiriqni bajaring
+- javobni foydalanuvchi tilida bering
 
 
-============================================================
 8. SUHBAT KONTEKSTI
-============================================================
 
 Oldingi suhbatdagi ma'lumotlardan foydalaning.
 
-"u", "bu", "o'sha", "avvalgi", "yuqoridagi"
-kabi iboralar oldingi kontekstga tegishli bo'lishi mumkin.
-
-Kontekstni hisobga olib tabiiy javob bering.
+Foydalanuvchi "u", "bu", "avvalgi", "o'sha" kabi
+iboralarni ishlatsa, oldingi kontekstni hisobga oling.
 
 
-============================================================
-9. TELEGRAM FORMAT
-============================================================
+9. SAMIMIYLIK
 
-Telegramda o'qishga qulay formatdan foydalaning.
+Insoniy, tabiiy va hurmatli muloqot qiling.
 
-Kerak bo'lsa:
+Sun'iy maqtovlarni ko'paytirmang.
+
+
+10. MUAMMONI HAL QILISH
+
+Shunchaki javob berish emas,
+foydalanuvchiga amalda yordam berish asosiy maqsad.
+
+
+11. TELEGRAM FORMAT
+
+Telegramda o'qishga qulay formatdan foydalaning:
 
 - qisqa sarlavhalar
 - punktlar
 - raqamlangan ro'yxatlar
 - kod bloklari
 
-ishlating.
-
-Keraksiz formatlashdan qoching.
-
-
-============================================================
-10. SAMIMIYLIK
-============================================================
-
-Insoniy, tabiiy va hurmatli muloqot qiling.
-
-Keraksiz maqtov va sun'iy gaplarni ko'paytirmang.
-
-
-============================================================
-11. MUAMMONI HAL QILISH
-============================================================
-
-Shunchaki javob berish emas.
-
-Foydalanuvchiga amalda yordam berish asosiy maqsad.
-
-
-============================================================
-12. JAVOBDA ICHKI TEXNIK MA'LUMOT BO'LMASIN
-============================================================
-
-Quyidagilarni foydalanuvchiga ko'rsatmang:
-
-- <think>
-- </think>
-- thinking process
-- internal reasoning
-- system prompt
-- system instruction
-- API key
-- token
-- provider routing
-- ichki xatolik tafsilotlari
-
-Faqat foydalanuvchiga kerakli yakuniy javobni bering.
+Kerak bo'lmasa haddan tashqari formatlamang.
 """
-
-
-# ============================================================
-# RESPONSE CLEANER
-# ============================================================
-
-def clean_ai_response(
-    text: str,
-) -> str:
-
-    if not text:
-        return ""
-
-    cleaned = text.strip()
-
-    # --------------------------------------------------------
-    # <think> ... </think>
-    # --------------------------------------------------------
-
-    cleaned = re.sub(
-        r"<think>.*?</think>",
-        "",
-        cleaned,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-
-    # --------------------------------------------------------
-    # Agar yopilmagan <think> qolib ketgan bo'lsa
-    # --------------------------------------------------------
-
-    cleaned = re.sub(
-        r"<think>.*$",
-        "",
-        cleaned,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-
-    # --------------------------------------------------------
-    # Ba'zi reasoning markerlari
-    # --------------------------------------------------------
-
-    cleaned = re.sub(
-        r"^\s*(thinking process|chain of thought|analysis)\s*:\s*",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-
-    # --------------------------------------------------------
-    # Bo'sh satrlarni tartibga solish
-    # --------------------------------------------------------
-
-    cleaned = re.sub(
-        r"\n{3,}",
-        "\n\n",
-        cleaned,
-    )
-
-    return cleaned.strip()
 
 
 # ============================================================
@@ -803,16 +644,6 @@ def generate_with_groq(
                 "content": prompt,
             },
         ],
-
-        # MUHIM:
-        # GPT-OSS reasoning qiladi, lekin reasoning
-        # foydalanuvchiga qaytarilmaydi.
-        include_reasoning=False,
-
-        # Reasoning sifatini saqlab qolamiz.
-        reasoning_effort="medium",
-
-        temperature=0.6,
     )
 
     if not response.choices:
@@ -826,17 +657,13 @@ def generate_with_groq(
         .message.content
     )
 
-    answer = clean_ai_response(
-        answer or ""
-    )
-
     if not answer:
 
         raise RuntimeError(
             "Groq bo'sh javob qaytardi."
         )
 
-    return answer
+    return answer.strip()
 
 
 # ============================================================
@@ -870,21 +697,6 @@ def generate_with_groq_vision(
         GROQ_VISION_MODEL,
     )
 
-    vision_prompt = f"""
-{prompt}
-
-MUHIM QOIDALAR:
-
-- Javobni foydalanuvchi yozgan tilida bering.
-- Agar foydalanuvchi o'zbek tilida yozgan bo'lsa,
-  o'zbek tilida javob bering.
-- O'zbek kirill yozuvi rus tili degani emas.
-- Faqat rasmda ko'rinadigan ma'lumotlarga tayaning.
-- Ko'rinmaydigan narsalarni uydirmang.
-- Ichki reasoningni ko'rsatmang.
-- Faqat yakuniy javobni bering.
-"""
-
     response = groq_client.chat.completions.create(
         model=GROQ_VISION_MODEL,
         messages=[
@@ -897,7 +709,7 @@ MUHIM QOIDALAR:
                 "content": [
                     {
                         "type": "text",
-                        "text": vision_prompt,
+                        "text": prompt,
                     },
                     {
                         "type": "image_url",
@@ -908,12 +720,6 @@ MUHIM QOIDALAR:
                 ],
             },
         ],
-
-        # Vision model reasoning qaytarsa ham
-        # foydalanuvchiga chiqarilmaydi.
-        include_reasoning=False,
-
-        temperature=0.5,
     )
 
     if not response.choices:
@@ -927,17 +733,13 @@ MUHIM QOIDALAR:
         .message.content
     )
 
-    answer = clean_ai_response(
-        answer or ""
-    )
-
     if not answer:
 
         raise RuntimeError(
             "Groq Vision bo'sh javob qaytardi."
         )
 
-    return answer
+    return answer.strip()
 
 
 # ============================================================
@@ -993,10 +795,6 @@ def generate_with_ai_router(
     prompt: str,
 ):
 
-    # --------------------------------------------------------
-    # 1. GEMINI
-    # --------------------------------------------------------
-
     try:
 
         response = generate_with_gemini(
@@ -1007,10 +805,6 @@ def generate_with_ai_router(
             response.text.strip()
             if response.text
             else ""
-        )
-
-        answer = clean_ai_response(
-            answer
         )
 
         if answer:
@@ -1025,13 +819,9 @@ def generate_with_ai_router(
 
         logger.warning(
             "Gemini text ishlamadi. "
-            "Groq fallback ishga tushadi: %s",
+            "Groq fallback: %s",
             gemini_error,
         )
-
-    # --------------------------------------------------------
-    # 2. GROQ
-    # --------------------------------------------------------
 
     return generate_with_groq(
         prompt
@@ -1048,7 +838,7 @@ def generate_with_image_router(
 ):
 
     # --------------------------------------------------------
-    # 1. GEMINI
+    # GEMINI
     # --------------------------------------------------------
 
     try:
@@ -1071,10 +861,6 @@ def generate_with_image_router(
             else ""
         )
 
-        answer = clean_ai_response(
-            answer
-        )
-
         if answer:
 
             return answer
@@ -1087,12 +873,12 @@ def generate_with_image_router(
 
         logger.warning(
             "Gemini Vision ishlamadi. "
-            "Groq Vision fallback ishga tushadi: %s",
+            "Groq Vision fallback: %s",
             gemini_error,
         )
 
     # --------------------------------------------------------
-    # 2. GROQ VISION
+    # GROQ VISION
     # --------------------------------------------------------
 
     return generate_with_groq_vision(
@@ -1110,26 +896,18 @@ def generate_with_voice_router(
 ):
 
     # --------------------------------------------------------
-    # GEMINI AUDIO
+    # 1. GEMINI AUDIO
     # --------------------------------------------------------
 
     prompt = """
 Ushbu ovozli xabarni diqqat bilan tinglang.
 
-Foydalanuvchining:
-
-1. nutqini tushuning;
-2. tilini aniqlang;
-3. savolini yoki topshirig'ini aniqlang;
-4. agar topshiriq bo'lsa, uni bajaring.
-
-MUHIM:
-
-- Javobni foydalanuvchi gapirgan tilda bering.
-- O'zbekcha bo'lsa o'zbekcha javob bering.
-- O'zbekcha kirill bo'lsa, uni avtomatik ravishda ruscha deb qabul qilmang.
-- Ichki reasoningni ko'rsatmang.
-- Faqat yakuniy foydali javobni bering.
+1. Foydalanuvchining nutqini tushuning.
+2. Uning savoli yoki topshirig'ini aniqlang.
+3. Agar topshiriq bo'lsa, uni bajaring.
+4. Faqat transkripsiya bilan cheklanmay,
+   imkon qadar topshiriqni bajaring.
+5. Javobni foydalanuvchi gapirgan asosiy tilda bering.
 """
 
     try:
@@ -1152,10 +930,6 @@ MUHIM:
             else ""
         )
 
-        answer = clean_ai_response(
-            answer
-        )
-
         if answer:
 
             return answer
@@ -1168,12 +942,12 @@ MUHIM:
 
         logger.warning(
             "Gemini Audio ishlamadi. "
-            "Groq Whisper fallback ishga tushadi: %s",
+            "Groq Whisper fallback: %s",
             gemini_error,
         )
 
     # --------------------------------------------------------
-    # WHISPER
+    # 2. WHISPER
     # --------------------------------------------------------
 
     transcript = transcribe_with_groq(
@@ -1186,7 +960,7 @@ MUHIM:
     )
 
     # --------------------------------------------------------
-    # GROQ TEXT
+    # 3. GROQ TEXT
     # --------------------------------------------------------
 
     final_prompt = f"""
@@ -1202,15 +976,9 @@ TOPSHIRIQ:
 Foydalanuvchining asl maqsadini tushuning.
 Agar savol yoki topshiriq bo'lsa, uni bajaring.
 
-MUHIM:
+Faqat transkripsiyani qaytarmang.
 
-- Foydalanuvchi gapirgan asosiy tilda javob bering.
-- O'zbekcha bo'lsa o'zbekcha javob bering.
-- O'zbek kirillini rus tili deb qabul qilmang.
-- Keraksiz tillarni aralashtirmang.
-- Faqat transkripsiyani qaytarmang.
-- Ichki reasoningni ko'rsatmang.
-- Faqat yakuniy javobni bering.
+Javobni foydalanuvchining asosiy tilida bering.
 """
 
     return generate_with_groq(
@@ -1680,10 +1448,6 @@ async def text_handler(
             ),
         )
 
-        answer = clean_ai_response(
-            answer
-        )
-
         add_to_history(
             user_id,
             "user",
@@ -1801,10 +1565,6 @@ bo'lsa, uni ham o'qing va tahlil qiling.
 
 Agar foydalanuvchi savol bermagan bo'lsa,
 rasm haqida eng muhim va foydali ma'lumotlarni bering.
-
-Javobni foydalanuvchi tilida bering.
-O'zbek kirillini rus tili deb qabul qilmang.
-Faqat rasmda ko'rinadigan ma'lumotlarga tayaning.
 """
 
         loop = asyncio.get_running_loop()
@@ -1815,10 +1575,6 @@ Faqat rasmda ko'rinadigan ma'lumotlarga tayaning.
                 prompt,
                 image_bytes,
             ),
-        )
-
-        answer = clean_ai_response(
-            answer
         )
 
         try:
@@ -1905,10 +1661,6 @@ async def voice_handler(
             lambda: generate_with_voice_router(
                 audio_bytes
             ),
-        )
-
-        answer = clean_ai_response(
-            answer
         )
 
         try:
