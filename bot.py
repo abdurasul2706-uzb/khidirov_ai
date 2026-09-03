@@ -77,10 +77,19 @@ GROQ_VISION_MODEL = os.getenv(
     "qwen/qwen3.6-27b",
 ).strip()
 
+# Muhim:
+# whisper-large-v3 multilingual ovozlar uchun kuchliroq.
 GROQ_WHISPER_MODEL = os.getenv(
     "GROQ_WHISPER_MODEL",
-    "whisper-large-v3-turbo",
+    "whisper-large-v3",
 ).strip()
+
+# Asosiy foydalanuvchi tili Uzbek.
+# "auto" yoki bo'sh qoldirilsa avtomatik aniqlashga o'tadi.
+GROQ_WHISPER_LANGUAGE = os.getenv(
+    "GROQ_WHISPER_LANGUAGE",
+    "uz",
+).strip().lower()
 
 ADMIN_USER_ID_RAW = os.getenv(
     "ADMIN_USER_ID",
@@ -150,7 +159,9 @@ Siz Telegram ichidagi universal, kuchli va ishonchli AI yordamchisiz.
 
 ASOSIY MAQSAD:
 Foydalanuvchining muammosini imkon qadar oxirigacha hal qiling.
-Javob sifati, aniqlik va foydalilik birinchi o'rinda.
+
+Javob sifati, aniqlik, foydalilik va halollik birinchi o'rinda.
+
 
 ============================================================
 1. TILNI QAT'IY SAQLASH
@@ -160,185 +171,256 @@ Javob tilini ENG SO'NGGI foydalanuvchi xabaridan aniqlang.
 
 Qoidalar:
 
-- O'zbek lotin tilida yozilsa → O'zbek lotin tilida javob bering.
-- O'zbek kirill tilida yozilsa → O'zbek kirill tilida javob bering.
-- Rus tilida yozilsa → Rus tilida javob bering.
-- Ingliz tilida yozilsa → Ingliz tilida javob bering.
-- Boshqa tilda yozilsa → o'sha tilda javob berishga harakat qiling.
-- Aralash xabar bo'lsa → asosiy/dominant tilni tanlang.
+- O'zbek lotin → O'zbek lotin.
+- O'zbek kirill → O'zbek kirill.
+- Rus tili → Rus tili.
+- Ingliz tili → Ingliz tili.
+- Boshqa til → imkon qadar o'sha til.
 
-MUHIM:
-O'zbek lotin tilida javob berayotgan bo'lsangiz,
-qozoqcha, turkcha yoki boshqa turkiy tillarning
-so'zlarini tasodifan aralashtirmang.
+O'zbek lotin tilida javob berayotganingizda:
 
-Foydalanuvchi tilini o'zgartirmasa,
-javob tilini ham o'zgartirmang.
+- qozoqcha so'zlarni aralashtirmang
+- ozarbayjoncha so'zlarni aralashtirmang
+- turkcha so'zlarni aralashtirmang
+- ruscha so'zlarni keraksiz ishlatmang
 
-Oldingi suhbatdagi boshqa tilga ergashmang.
-ENG SO'NGGI foydalanuvchi xabari asosiy mezon.
+Agar foydalanuvchi O'zbek tilida gapirsa,
+javobni tabiiy O'zbek tilida bering.
+
+Oldingi suhbat boshqa tilda bo'lgan bo'lsa,
+ENG SO'NGGI xabar tilini ustun qo'ying.
+
 
 ============================================================
-2. REASONING
+2. REASONING MAXFIYLIGI
 ============================================================
 
-Murakkab savollarni ichki reasoning orqali chuqur tahlil qiling.
+Murakkab savollarni ichingizda chuqur tahlil qiling.
 
 Matematika:
-- hisob-kitobni tekshiring
-- oraliq natijalarni ichingizda tekshiring
+- hisobni tekshiring
+- natijani qayta tekshiring
 
 Dasturlash:
-- kodni diqqat bilan tekshiring
-- xatolarni aniqlang
+- kodni tahlil qiling
+- xatolarni tekshiring
 - ishlaydigan yechim bering
 
 Mantiq:
-- taxmin qilishdan oldin shartlarni tekshiring
+- shartlarni tekshiring
+- taxminni fakt sifatida bermang
 
 MUHIM:
-Ichki reasoning, chain-of-thought, <think>,
-<analysis> yoki yashirin fikrlash jarayonini
-foydalanuvchiga ko'rsatmang.
 
-Faqat yakuniy foydali javobni bering.
+Quyidagilarni foydalanuvchiga ko'rsatmang:
+
+<think>
+<analysis>
+<reasoning>
+chain of thought
+ichki fikrlash
+ichki reasoning
+modelning yashirin tahlili
+
+Faqat yakuniy foydali javobni ko'rsating.
+
 
 ============================================================
-3. ANIQLIK VA HALOLLIK
+3. FAKTUAL ANIQLIK
 ============================================================
 
-Bilmagan narsangizni uydirmang.
+Bilmagan narsangizni UYDIRMANG.
 
-Aniq bilmagan:
+Ayniqsa:
+
+- tarix
 - sana
-- raqam
+- yil
 - statistika
+- narx
 - reyting
-- tarixiy fakt
 - ism
 - manzil
 - qonun
-- narx
 - yangilik
+- geografiya
 
-kabi ma'lumotlarni fakt sifatida to'qib chiqarmang.
+bo'yicha ishonchingiz bo'lmasa,
+aniq fakt sifatida yozmang.
 
-Agar ma'lumotga ishonchingiz past bo'lsa,
-buni ochiq ayting.
+Agar aniq bilmasangiz:
 
-"Bilmayman" deyish uydirma javob berishdan yaxshiroq.
+"Bu ma'lumotni aniq tasdiqlay olmayman."
 
-============================================================
-4. JAVOB SIFATI
-============================================================
+yoki
 
-Javob:
+"Bu bo'yicha ishonchim yetarli emas."
 
-- aniq
-- tabiiy
-- aqlli
-- tushunarli
-- amaliy
-- tartibli
+deb ayting.
 
-bo'lsin.
+Uydirma javobdan ko'ra halol javob yaxshi.
 
-Oddiy savolga keraksiz uzun javob bermang.
-
-Murakkab savolga esa yetarlicha batafsil tushuntiring.
-
-Foydalanuvchiga real yordam berishga harakat qiling.
 
 ============================================================
-5. DASTURLASH
+4. RASM TAHLILI — JUDA MUHIM
 ============================================================
 
-Dasturlash savollarida ishlaydigan kod yozing.
+Rasmni tahlil qilayotganda faqat rasmda
+HAQIQATAN KO'RINAYOTGAN ma'lumotlarga tayaning.
 
-Agar foydalanuvchi kod yuborsa:
+Quyidagilarni o'ylab topmang:
 
-1. Kodni diqqat bilan tahlil qiling.
-2. Muammoni toping.
-3. Xatoning sababini tushuntiring.
-4. To'g'ri kodni bering.
-5. Kerak bo'lsa qanday ishga tushirishni ko'rsating.
+- aniq yil
+- aniq sana
+- odamning ismi
+- odamning kimligi
+- aniq manzil
+- aniq joy
+- voqeaning tarixi
+- kamera modeli
+- rasmning olingan sanasi
+- odamning aniq yoshi
+- rasm muallifi
 
-Kod bloklaridan foydalaning.
+Agar bunday ma'lumot rasmning o'zida aniq ko'rinmasa,
+"aniq ko'rinmaydi" deb ayting.
+
+Masalan:
+
+Noto'g'ri:
+"Bu rasm 2007-yilda olingan."
+
+Agar rasmda buni ko'rsatuvchi dalil bo'lmasa.
+
+To'g'ri:
+"Rasmning o'zidan aniq yilni aniqlab bo'lmaydi."
+
+Rasmda odamlar bo'lsa,
+ularning shaxsini aniqlashga urinmang.
+
+Ko'rinayotgan narsani tavsiflang.
+
 
 ============================================================
-6. RASM
+5. RASMDA MATN
 ============================================================
 
-Rasm yuborilsa:
+Agar rasmda matn bo'lsa:
 
-- rasmni diqqat bilan ko'ring
-- matnni o'qing
-- obyektlarni aniqlang
-- diagrammani tushuning
-- jadvalni tahlil qiling
-- grafikni tahlil qiling
-- matematik masalani yeching
-- kodni o'qing
+- matnni diqqat bilan o'qing
+- ko'rinmaydigan qismini o'ylab topmang
+- noaniq joyni noaniq deb belgilang
 
-Caption mavjud bo'lsa,
-aynan foydalanuvchi bergan topshiriqqa e'tibor bering.
+Agar:
+
+- kod
+- formula
+- matematika
+- jadval
+- diagramma
+- grafik
+- hujjat
+
+bo'lsa, uni tahlil qiling.
+
 
 ============================================================
-7. OVOZ
+6. OVOZ
 ============================================================
 
-Ovozli xabar yuborilsa:
+Ovozli xabar uchun:
 
 - nutqni tushuning
 - asosiy tilni aniqlang
-- foydalanuvchi nima istayotganini tushuning
-- faqat transkripsiya bilan cheklanib qolmang
-- topshiriqni imkon qadar bajaring
+- transkripsiya xatosi bo'lishi mumkinligini hisobga oling
+- foydalanuvchining asl maqsadini tushuning
+- faqat transkripsiyani qaytarmang
+- topshiriqni bajaring
 
-Javobni foydalanuvchining asosiy tilida bering.
+Agar transkripsiya shubhali bo'lsa,
+kontekst asosida eng ehtimoliy ma'noni aniqlang.
+
+Lekin ma'noni asossiz o'zgartirmang.
+
+
+============================================================
+7. DASTURLASH
+============================================================
+
+Kod yuborilsa:
+
+1. Kodni tahlil qiling.
+2. Muammoni toping.
+3. Sababini tushuntiring.
+4. To'g'ri kodni bering.
+5. Kerak bo'lsa ishga tushirishni ko'rsating.
+
+Kod bloklaridan foydalaning.
+
 
 ============================================================
 8. SUHBAT KONTEKSTI
 ============================================================
 
-Oldingi suhbat ma'lumotlaridan foydalaning.
+Oldingi suhbatdan foydalaning.
 
-"u", "bu", "o'sha", "avvalgi", "yuqoridagi"
+Masalan:
+
+"u"
+"bu"
+"o'sha"
+"avvalgi"
+"yuqoridagi"
+
 kabi iboralarni kontekst orqali tushuning.
 
-Lekin yangi foydalanuvchi xabari eski kontekstga zid bo'lsa,
+Ammo yangi xabar eski ma'lumotga zid bo'lsa,
 yangi xabarni ustun qo'ying.
 
+
 ============================================================
-9. SAMIMIY MULOQOT
+9. JAVOB USLUBI
 ============================================================
 
-Insoniy va tabiiy muloqot qiling.
+Javob:
 
-Keraksiz maqtovlarni ko'paytirmang.
+- tabiiy
+- aniq
+- aqlli
+- foydali
+- amaliy
+- tushunarli
 
-Foydalanuvchiga hurmat bilan murojaat qiling.
+bo'lsin.
+
+Oddiy savolga qisqa javob bering.
+
+Murakkab savolga yetarlicha batafsil javob bering.
+
+Keraksiz maqtov va ortiqcha gaplardan qoching.
+
 
 ============================================================
 10. TELEGRAM FORMAT
 ============================================================
 
-Telegram uchun qulay formatdan foydalaning:
+Telegram uchun qulay format:
 
-- qisqa sarlavhalar
 - punktlar
 - raqamlangan ro'yxatlar
+- qisqa sarlavhalar
 - kod bloklari
 
 Keraksiz formatlashdan qoching.
+
 
 ============================================================
 11. ENG MUHIM QOIDA
 ============================================================
 
-Shunchaki javob yozish emas.
+Shunchaki javob yozmang.
 
-Foydalanuvchining asl maqsadini tushuning
+Foydalanuvchining ASL MAQSADINI tushuning
 va unga amalda foydali yechim bering.
 """
 
@@ -356,10 +438,7 @@ def clean_ai_response(
 
     cleaned = text.strip()
 
-    # --------------------------------------------------------
-    # THINK BLOCKS
-    # --------------------------------------------------------
-
+    # Think blocks
     cleaned = re.sub(
         r"<think>.*?</think>",
         "",
@@ -381,28 +460,18 @@ def clean_ai_response(
         flags=re.IGNORECASE | re.DOTALL,
     )
 
-    # --------------------------------------------------------
-    # UNCLOSED THINK / ANALYSIS
-    # --------------------------------------------------------
-
+    # Unclosed blocks
     for tag in (
         "<think>",
         "<analysis>",
         "<reasoning>",
     ):
-
-        position = cleaned.lower().find(
-            tag
-        )
+        position = cleaned.lower().find(tag)
 
         if position != -1:
-
             cleaned = cleaned[:position]
 
-    # --------------------------------------------------------
-    # COMMON REASONING PREFIXES
-    # --------------------------------------------------------
-
+    # Common prefixes
     cleaned = re.sub(
         r"^\s*analysis\s*:\s*",
         "",
@@ -412,6 +481,14 @@ def clean_ai_response(
 
     cleaned = re.sub(
         r"^\s*reasoning\s*:\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    # Ba'zi modellar "final answer" kabi belgilar chiqarishi mumkin.
+    cleaned = re.sub(
+        r"^\s*final answer\s*:\s*",
         "",
         cleaned,
         flags=re.IGNORECASE,
@@ -465,6 +542,17 @@ def detect_language_hint(
         "nega",
         "bo'ladi",
         "boladi",
+        "menga",
+        "biz",
+        "bizga",
+        "sizga",
+        "ayting",
+        "bering",
+        "mumkin",
+        "emas",
+        "bor",
+        "yo'q",
+        "yoq",
     }
 
     russian_words = {
@@ -479,6 +567,9 @@ def detect_language_hint(
         "меня",
         "тебя",
         "пожалуйста",
+        "расскажи",
+        "объясни",
+        "помоги",
     }
 
     english_words = {
@@ -493,6 +584,9 @@ def detect_language_hint(
         "would",
         "help",
         "with",
+        "give",
+        "tell",
+        "explain",
     }
 
     if len(words & uzbek_words) >= 1:
@@ -535,10 +629,7 @@ def add_to_history(
     )
 
     if len(history) > MAX_HISTORY_MESSAGES:
-
-        del history[
-            :-MAX_HISTORY_MESSAGES
-        ]
+        del history[:-MAX_HISTORY_MESSAGES]
 
 
 def build_prompt(
@@ -560,11 +651,10 @@ def build_prompt(
         return f"""
 OUTPUT LANGUAGE LOCK: {language_hint}
 
-Eng muhim qoida:
-Javobni ENG SO'NGGI foydalanuvchi xabari tilida bering.
-Boshqa tilga o'tmang.
+Javobni ENG SO'NGGI foydalanuvchi xabarining
+tilida bering.
 
-FOYDALANUVCHI XABARI:
+Foydalanuvchi xabari:
 
 {current_message}
 """
@@ -592,13 +682,14 @@ FOYDALANUVCHI XABARI:
     return f"""
 OUTPUT LANGUAGE LOCK: {language_hint}
 
-Juda muhim:
-Javob tilini faqat ENG SO'NGGI foydalanuvchi xabaridan aniqlang.
+MUHIM:
+Javob tilini faqat ENG SO'NGGI foydalanuvchi
+xabaridan aniqlang.
 
 Oldingi suhbat boshqa tilda bo'lgan bo'lsa ham,
 yangi foydalanuvchi xabarining tilida javob bering.
 
-OLDINGI SUHBAT KONTEKSTI:
+OLDINGI SUHBAT:
 
 {history_text}
 
@@ -611,7 +702,7 @@ YANGI FOYDALANUVCHI XABARI:
 ---
 
 Oldingi suhbatni hisobga olib,
-yangi xabarga tabiiy, aniq va foydali javob bering.
+yangi xabarga aniq, tabiiy va foydali javob bering.
 """
 
 
@@ -852,9 +943,7 @@ def generate_with_gemini(
 
                 if attempt < 3:
 
-                    time.sleep(
-                        2
-                    )
+                    time.sleep(2)
 
                 else:
 
@@ -904,10 +993,6 @@ def generate_with_groq(
         )
 
     except TypeError as error:
-
-        # Ba'zi eski OpenAI SDK versiyalarida
-        # extra_body ishlamasligi mumkin.
-        # Bunday holatda oddiy so'rovga o'tamiz.
 
         logger.warning(
             "Groq extra_body qabul qilinmadi. "
@@ -981,14 +1066,48 @@ def generate_with_groq_vision(
 
     image_base64 = base64.b64encode(
         image_bytes
-    ).decode(
-        "utf-8"
-    )
+    ).decode("utf-8")
 
     image_url = (
         "data:image/jpeg;base64,"
         + image_base64
     )
+
+    strict_vision_prompt = f"""
+RASM TAHLILI QOIDALARI:
+
+Faqat rasmda HAQIQATAN KO'RINAYOTGAN narsalar
+asosida javob bering.
+
+Hech qachon dalilsiz quyidagilarni o'ylab topmang:
+
+- aniq sana
+- aniq yil
+- ism
+- shaxsning kimligi
+- aniq manzil
+- aniq joy
+- voqea tarixi
+- kamera modeli
+- rasm olingan vaqt
+
+Agar ma'lumot rasmda ko'rinmasa:
+
+"Bu rasmning o'zidan aniqlanmaydi."
+
+deb ayting.
+
+Odamlarning shaxsini aniqlamang.
+
+Agar taxmin qilayotgan bo'lsangiz,
+uni FAKT sifatida emas, taxmin sifatida belgilang.
+
+Foydalanuvchining topshirig'iga birinchi navbatda javob bering.
+
+FOYDALANUVCHI TOPSHIRIG'I:
+
+{prompt}
+"""
 
     logger.info(
         "Groq vision request | model=%s",
@@ -1007,7 +1126,7 @@ def generate_with_groq_vision(
                 "content": [
                     {
                         "type": "text",
-                        "text": prompt,
+                        "text": strict_vision_prompt,
                     },
                     {
                         "type": "image_url",
@@ -1070,18 +1189,33 @@ def transcribe_with_groq(
         )
 
     logger.info(
-        "Groq Whisper request | model=%s",
+        "Groq Whisper request | model=%s | language=%s",
         GROQ_WHISPER_MODEL,
+        GROQ_WHISPER_LANGUAGE or "auto",
     )
+
+    request_kwargs = {
+        "file": (
+            "voice.ogg",
+            audio_bytes,
+        ),
+        "model": GROQ_WHISPER_MODEL,
+        "response_format": "json",
+    }
+
+    # "auto" yoki bo'sh bo'lsa language yuborilmaydi.
+    if GROQ_WHISPER_LANGUAGE not in (
+        "",
+        "auto",
+        "none",
+    ):
+        request_kwargs["language"] = (
+            GROQ_WHISPER_LANGUAGE
+        )
 
     transcription = (
         groq_client.audio.transcriptions.create(
-            file=(
-                "voice.ogg",
-                audio_bytes,
-            ),
-            model=GROQ_WHISPER_MODEL,
-            response_format="json",
+            **request_kwargs
         )
     )
 
@@ -1097,12 +1231,15 @@ def transcribe_with_groq(
             "Whisper transkripsiyasi bo'sh."
         )
 
+    text = text.strip()
+
     logger.info(
-        "AI PROVIDER=GROQ | Whisper success | model=%s",
+        "AI PROVIDER=GROQ | Whisper success | model=%s | text=%s",
         GROQ_WHISPER_MODEL,
+        text[:300],
     )
 
-    return text.strip()
+    return text
 
 
 # ============================================================
@@ -1112,6 +1249,10 @@ def transcribe_with_groq(
 def generate_with_ai_router(
     prompt: str,
 ):
+
+    # --------------------------------------------------------
+    # 1. GEMINI
+    # --------------------------------------------------------
 
     try:
 
@@ -1140,10 +1281,13 @@ def generate_with_ai_router(
     except Exception as gemini_error:
 
         logger.warning(
-            "Gemini text ishlamadi. "
-            "Groq fallback: %s",
+            "Gemini text ishlamadi. Groq fallback: %s",
             gemini_error,
         )
+
+    # --------------------------------------------------------
+    # 2. GROQ
+    # --------------------------------------------------------
 
     return generate_with_groq(
         prompt
@@ -1198,8 +1342,7 @@ def generate_with_image_router(
     except Exception as gemini_error:
 
         logger.warning(
-            "Gemini Vision ishlamadi. "
-            "Groq Vision fallback: %s",
+            "Gemini Vision ishlamadi. Groq Vision fallback: %s",
             gemini_error,
         )
 
@@ -1221,21 +1364,21 @@ def generate_with_voice_router(
     audio_bytes: bytes,
 ):
 
-    prompt = """
-Ushbu ovozli xabarni diqqat bilan tinglang.
-
-1. Foydalanuvchining nutqini tushuning.
-2. Asosiy tilni aniqlang.
-3. Foydalanuvchining savoli yoki topshirig'ini aniqlang.
-4. Agar topshiriq bo'lsa, uni bajaring.
-5. Faqat transkripsiyani qaytarmang.
-6. Javobni foydalanuvchining gapirgan asosiy tilida bering.
-7. Ichki reasoning yoki <think> mazmunini chiqarmang.
-"""
-
     # --------------------------------------------------------
     # 1. GEMINI AUDIO
     # --------------------------------------------------------
+
+    prompt = """
+Ushbu ovozli xabarni diqqat bilan tushuning.
+
+1. Foydalanuvchining nutqini tushuning.
+2. Asosiy tilni aniqlang.
+3. Savol yoki topshiriqni aniqlang.
+4. Agar topshiriq bo'lsa, uni bajaring.
+5. Faqat transkripsiyani qaytarmang.
+6. Javobni foydalanuvchining asosiy tilida bering.
+7. Ichki reasoningni ko'rsatmang.
+"""
 
     try:
 
@@ -1272,8 +1415,7 @@ Ushbu ovozli xabarni diqqat bilan tinglang.
     except Exception as gemini_error:
 
         logger.warning(
-            "Gemini Audio ishlamadi. "
-            "Groq Whisper fallback: %s",
+            "Gemini Audio ishlamadi. Groq Whisper fallback: %s",
             gemini_error,
         )
 
@@ -1295,36 +1437,42 @@ Ushbu ovozli xabarni diqqat bilan tinglang.
     # --------------------------------------------------------
 
     final_prompt = f"""
-OUTPUT LANGUAGE LOCK:
-
-Foydalanuvchining ovozli xabarida ishlatilgan
-asosiy tilni aniqlang va javobni aynan shu tilda bering.
+VOICE INPUT MODE
 
 Quyidagi matn foydalanuvchining ovozli xabaridan
-Whisper orqali olingan transkripsiyadir.
+Whisper orqali olingan.
+
+Transkripsiyada xatolar bo'lishi mumkin.
 
 TRANSKRIPSIYA:
 
 {transcript}
 
-TOPSHIRIQ:
+VAZIFA:
 
 Foydalanuvchining asl maqsadini tushuning.
 
-Agar savol bo'lsa — javob bering.
-Agar topshiriq bo'lsa — bajaring.
-Agar matn noaniq bo'lsa — eng ehtimoliy ma'noni
-tushunishga harakat qiling.
+Agar savol bo'lsa:
+→ savolga javob bering.
+
+Agar topshiriq bo'lsa:
+→ topshiriqni bajaring.
+
+Agar foydalanuvchi Uzbek tilida gapirgan bo'lsa:
+→ O'zbek tilida javob bering.
+
+Agar transkripsiyada Ozarbayjoncha yoki boshqa
+turkiy tilga o'xshash noto'g'ri so'zlar paydo bo'lsa,
+kontekstni tekshiring va foydalanuvchining ehtimoliy
+asl O'zbekcha ma'nosini tiklashga harakat qiling.
+
+Lekin foydalanuvchi ma'nosini o'zboshimchalik bilan
+o'zgartirmang.
 
 Faqat transkripsiyani qaytarmang.
 
-Javobda:
-- <think>
-- <analysis>
-- reasoning
-- ichki fikrlash
-
-chiqmasin.
+Ichki reasoningni chiqarmang.
+<think>, <analysis>, <reasoning> chiqarmang.
 """
 
     return generate_with_groq(
@@ -1345,11 +1493,9 @@ def split_text(
 ) -> list[str]:
 
     if not text:
-
         return [""]
 
     if len(text) <= max_length:
-
         return [text]
 
     chunks = []
@@ -1382,10 +1528,7 @@ def split_text(
         )
 
         if chunk:
-
-            chunks.append(
-                chunk
-            )
+            chunks.append(chunk)
 
         remaining = (
             remaining[cut:]
@@ -1393,10 +1536,7 @@ def split_text(
         )
 
     if remaining:
-
-        chunks.append(
-            remaining
-        )
+        chunks.append(remaining)
 
     return chunks
 
@@ -1406,9 +1546,7 @@ async def send_long_message(
     text: str,
 ) -> None:
 
-    chunks = split_text(
-        text
-    )
+    chunks = split_text(text)
 
     for chunk in chunks:
 
@@ -1439,9 +1577,7 @@ class HealthCheckHandler(
 
     def do_GET(self):
 
-        self.send_response(
-            200
-        )
+        self.send_response(200)
 
         self.send_header(
             "Content-Type",
@@ -1456,9 +1592,7 @@ class HealthCheckHandler(
 
     def do_HEAD(self):
 
-        self.send_response(
-            200
-        )
+        self.send_response(200)
 
         self.end_headers()
 
@@ -1519,7 +1653,6 @@ async def start_handler(
 ):
 
     if message.from_user:
-
         register_user(
             message.from_user
         )
@@ -1553,7 +1686,6 @@ async def help_handler(
 ):
 
     if message.from_user:
-
         register_user(
             message.from_user
         )
@@ -1584,7 +1716,6 @@ async def id_handler(
 ):
 
     if not message.from_user:
-
         return
 
     register_user(
@@ -1609,7 +1740,6 @@ async def reset_handler(
 ):
 
     if not message.from_user:
-
         return
 
     register_user(
@@ -1638,7 +1768,6 @@ async def users_handler(
 ):
 
     if not message.from_user:
-
         return
 
     if not is_admin(
@@ -1651,9 +1780,7 @@ async def users_handler(
 
         return
 
-    total_users = len(
-        users
-    )
+    total_users = len(users)
 
     total_messages = sum(
         user_message_counts.values()
@@ -1706,9 +1833,7 @@ async def users_handler(
 
         user_id = user["id"]
 
-        username = user[
-            "username"
-        ]
+        username = user["username"]
 
         username_text = (
             f"@{username}"
@@ -1749,7 +1874,6 @@ async def text_handler(
 ):
 
     if not message.from_user:
-
         return
 
     user_id = message.from_user.id
@@ -1763,11 +1887,9 @@ async def text_handler(
     )
 
     if not user_text:
-
         return
 
     if user_text.startswith("/"):
-
         return
 
     user_message_counts[
@@ -1807,11 +1929,8 @@ async def text_handler(
         )
 
         try:
-
             await processing.delete()
-
         except Exception:
-
             pass
 
         await send_long_message(
@@ -1851,7 +1970,6 @@ async def photo_handler(
 ):
 
     if not message.from_user:
-
         return
 
     user_id = message.from_user.id
@@ -1909,11 +2027,15 @@ Agar rasmda:
 
 bo'lsa, uni ham o'qing va tahlil qiling.
 
+Faqat rasmda ko'rinadigan ma'lumotlarga tayaning.
+
+Agar ma'lumot aniq ko'rinmasa,
+uni o'ylab topmang.
+
 Agar foydalanuvchi savol bermagan bo'lsa,
 rasm haqida eng muhim va foydali ma'lumotlarni bering.
 
-Javobni rasm yuborgan foydalanuvchining
-asosiy tilida bering.
+Javobni foydalanuvchining asosiy tilida bering.
 """
 
         loop = asyncio.get_running_loop()
@@ -1939,11 +2061,8 @@ asosiy tilida bering.
         )
 
         try:
-
             await processing.delete()
-
         except Exception:
-
             pass
 
         await send_long_message(
@@ -1982,7 +2101,6 @@ async def voice_handler(
 ):
 
     if not message.from_user:
-
         return
 
     user_id = message.from_user.id
@@ -2037,11 +2155,8 @@ async def voice_handler(
         )
 
         try:
-
             await processing.delete()
-
         except Exception:
-
             pass
 
         await send_long_message(
@@ -2120,6 +2235,11 @@ async def main():
     logger.info(
         "Groq Whisper model: %s",
         GROQ_WHISPER_MODEL,
+    )
+
+    logger.info(
+        "Groq Whisper language: %s",
+        GROQ_WHISPER_LANGUAGE or "auto",
     )
 
     logger.info(
