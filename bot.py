@@ -72,6 +72,18 @@ GROQ_MODEL = os.getenv(
     "openai/gpt-oss-120b",
 ).strip()
 
+# OpenRouter — uchinchi, bepul fallback.
+# Default router mos bepul modelni o'zi tanlaydi.
+OPENROUTER_API_KEY = os.getenv(
+    "OPENROUTER_API_KEY",
+    "",
+).strip()
+
+OPENROUTER_MODEL = os.getenv(
+    "OPENROUTER_MODEL",
+    "openrouter/free",
+).strip()
+
 GROQ_VISION_MODEL = os.getenv(
     "GROQ_VISION_MODEL",
     "qwen/qwen3.6-27b",
@@ -146,6 +158,18 @@ groq_client = (
         base_url="https://api.groq.com/openai/v1",
     )
     if GROQ_API_KEY
+    else None
+)
+
+openrouter_client = (
+    OpenAI(
+        api_key=OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "X-Title": "khidirov_ai",
+        },
+    )
+    if OPENROUTER_API_KEY
     else None
 )
 
@@ -1243,6 +1267,64 @@ def transcribe_with_groq(
 
 
 # ============================================================
+# OPENROUTER TEXT
+# ============================================================
+
+def generate_with_openrouter(
+    prompt: str,
+):
+    if not openrouter_client:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY mavjud emas."
+        )
+
+    logger.info(
+        "OpenRouter text request | model=%s",
+        OPENROUTER_MODEL,
+    )
+
+    response = openrouter_client.chat.completions.create(
+        model=OPENROUTER_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": SYSTEM_INSTRUCTION,
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+    )
+
+    if not response.choices:
+        raise RuntimeError(
+            "OpenRouter bo'sh javob qaytardi."
+        )
+
+    answer = response.choices[0].message.content
+
+    if not answer:
+        raise RuntimeError(
+            "OpenRouter bo'sh javob qaytardi."
+        )
+
+    answer = clean_ai_response(answer)
+
+    if not answer:
+        raise RuntimeError(
+            "OpenRouter javobidan faqat reasoning chiqdi."
+        )
+
+    logger.info(
+        "AI PROVIDER=OPENROUTER | text success | model=%s",
+        OPENROUTER_MODEL,
+    )
+
+    return answer
+
+
+# ============================================================
 # AI TEXT ROUTER
 # ============================================================
 
@@ -1289,9 +1371,136 @@ def generate_with_ai_router(
     # 2. GROQ
     # --------------------------------------------------------
 
-    return generate_with_groq(
+    try:
+        return generate_with_groq(
+            prompt
+        )
+    except Exception as groq_error:
+        logger.warning(
+            "Groq text ishlamadi. OpenRouter fallback: %s",
+            groq_error,
+        )
+
+    # --------------------------------------------------------
+    # 3. OPENROUTER
+    # --------------------------------------------------------
+
+    return generate_with_openrouter(
         prompt
     )
+
+
+# ============================================================
+# OPENROUTER VISION
+# ============================================================
+
+def generate_with_openrouter_vision(
+    image_bytes: bytes,
+    prompt: str,
+):
+    if not openrouter_client:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY mavjud emas."
+        )
+
+    image_base64 = base64.b64encode(
+        image_bytes
+    ).decode("utf-8")
+
+    image_url = (
+        "data:image/jpeg;base64,"
+        + image_base64
+    )
+
+    strict_vision_prompt = f"""
+RASM TAHLILI QOIDALARI:
+
+Faqat rasmda HAQIQATAN KO'RINAYOTGAN narsalar
+asosida javob bering.
+
+Dalilsiz quyidagilarni o'ylab topmang:
+- aniq sana
+- aniq yil
+- ism
+- shaxsning kimligi
+- aniq manzil
+- aniq joy
+- voqea tarixi
+- kamera modeli
+- rasm olingan vaqt
+- odamning aniq yoshi
+
+Agar ma'lumot rasmda ko'rinmasa:
+"Bu rasmning o'zidan aniqlanmaydi."
+deb ayting.
+
+Odamlarning shaxsini aniqlamang.
+
+Agar taxmin qilayotgan bo'lsangiz,
+uni fakt emas, taxmin sifatida belgilang.
+
+Foydalanuvchining topshirig'iga birinchi navbatda javob bering.
+
+FOYDALANUVCHI TOPSHIRIG'I:
+
+{prompt}
+"""
+
+    logger.info(
+        "OpenRouter vision request | model=%s",
+        OPENROUTER_MODEL,
+    )
+
+    response = openrouter_client.chat.completions.create(
+        model=OPENROUTER_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": SYSTEM_INSTRUCTION,
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": strict_vision_prompt,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_url,
+                        },
+                    },
+                ],
+            },
+        ],
+    )
+
+    if not response.choices:
+        raise RuntimeError(
+            "OpenRouter Vision bo'sh javob qaytardi."
+        )
+
+    answer = response.choices[0].message.content
+
+    if not answer:
+        raise RuntimeError(
+            "OpenRouter Vision bo'sh javob qaytardi."
+        )
+
+    answer = clean_ai_response(answer)
+
+    if not answer:
+        raise RuntimeError(
+            "OpenRouter Vision javobi bo'sh."
+        )
+
+    logger.info(
+        "AI PROVIDER=OPENROUTER | vision success | model=%s",
+        OPENROUTER_MODEL,
+    )
+
+    return answer
 
 
 # ============================================================
@@ -1350,7 +1559,22 @@ def generate_with_image_router(
     # 2. GROQ VISION
     # --------------------------------------------------------
 
-    return generate_with_groq_vision(
+    try:
+        return generate_with_groq_vision(
+            image_bytes,
+            prompt,
+        )
+    except Exception as groq_error:
+        logger.warning(
+            "Groq Vision ishlamadi. OpenRouter Vision fallback: %s",
+            groq_error,
+        )
+
+    # --------------------------------------------------------
+    # 3. OPENROUTER VISION
+    # --------------------------------------------------------
+
+    return generate_with_openrouter_vision(
         image_bytes,
         prompt,
     )
@@ -1475,7 +1699,18 @@ Ichki reasoningni chiqarmang.
 <think>, <analysis>, <reasoning> chiqarmang.
 """
 
-    return generate_with_groq(
+    try:
+        return generate_with_groq(
+            final_prompt
+        )
+    except Exception as groq_error:
+        logger.warning(
+            "Groq voice final javobi ishlamadi. "
+            "OpenRouter fallback: %s",
+            groq_error,
+        )
+
+    return generate_with_openrouter(
         final_prompt
     )
 
@@ -2220,6 +2455,16 @@ async def main():
     logger.info(
         "Groq enabled: %s",
         bool(groq_client),
+    )
+
+    logger.info(
+        "OpenRouter enabled: %s",
+        bool(openrouter_client),
+    )
+
+    logger.info(
+        "OpenRouter model: %s",
+        OPENROUTER_MODEL,
     )
 
     logger.info(
