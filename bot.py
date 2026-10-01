@@ -1776,11 +1776,6 @@ def generate_with_gemini_image(
                 contents=contents,
                 config=genai_types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
-                    response_format={
-                        "image": {
-                            "image_size": "1K",
-                        }
-                    },
                 ),
             )
 
