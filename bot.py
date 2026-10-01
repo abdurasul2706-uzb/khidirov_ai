@@ -6,6 +6,7 @@ import random
 import re
 import time
 import sqlite3
+import io
 from contextlib import closing
 
 from collections import defaultdict
@@ -57,6 +58,11 @@ API_KEYS = [
 MODEL_NAME = os.getenv(
     "GEMINI_MODEL",
     "gemini-3.6-flash",
+).strip()
+
+IMAGE_MODEL = os.getenv(
+    "GEMINI_IMAGE_MODEL",
+    "gemini-3.1-flash-image",
 ).strip()
 
 THINKING_LEVEL = os.getenv(
@@ -1709,6 +1715,129 @@ FOYDALANUVCHI TOPSHIRIG'I:
 
 
 # ============================================================
+# GEMINI IMAGE GENERATION / EDITING
+# ============================================================
+
+def _extract_generated_image(response) -> bytes | None:
+    """Gemini javobidan haqiqiy rasm bytes'ini ajratib oladi."""
+    if not response:
+        return None
+
+    for part in getattr(response, "parts", []) or []:
+        inline = getattr(part, "inline_data", None)
+        data = getattr(inline, "data", None) if inline else None
+        if data:
+            if isinstance(data, bytes):
+                return data
+            return base64.b64decode(data)
+
+        try:
+            image = part.as_image()
+            if image is not None:
+                buffer = io.BytesIO()
+                image.save(buffer, format="PNG")
+                return buffer.getvalue()
+        except Exception:
+            continue
+
+    return None
+
+
+def generate_with_gemini_image(
+    prompt: str,
+    image_bytes: bytes | None = None,
+) -> bytes:
+    """Gemini 3.1 Flash Image orqali yangi rasm yaratadi yoki rasmni tahrirlaydi."""
+    last_error = None
+    client_order = list(range(len(clients)))
+    random.shuffle(client_order)
+
+    for client_index in client_order:
+        client = clients[client_index]
+        try:
+            contents = [prompt]
+            if image_bytes:
+                contents.append(
+                    genai_types.Part.from_bytes(
+                        data=image_bytes,
+                        mime_type="image/jpeg",
+                    )
+                )
+
+            logger.info(
+                "Gemini IMAGE request | model=%s | edit=%s | client=%s",
+                IMAGE_MODEL,
+                bool(image_bytes),
+                client_index + 1,
+            )
+
+            response = client.models.generate_content(
+                model=IMAGE_MODEL,
+                contents=contents,
+                config=genai_types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    response_format={
+                        "image": {
+                            "image_size": "1K",
+                        }
+                    },
+                ),
+            )
+
+            result = _extract_generated_image(response)
+            if result:
+                logger.info(
+                    "AI PROVIDER=GEMINI | image success | model=%s | client=%s",
+                    IMAGE_MODEL,
+                    client_index + 1,
+                )
+                return result
+
+            raise RuntimeError("Gemini rasm qaytarmadi.")
+
+        except Exception as error:
+            last_error = error
+            logger.error(
+                "Gemini IMAGE error | model=%s | client=%s | type=%s | %s",
+                IMAGE_MODEL,
+                client_index + 1,
+                get_error_type(error),
+                error,
+            )
+            # Keyingi Gemini key'ga o'tamiz; quota/auth/model xatosida
+            # ham qolgan key'lar sinab ko'riladi.
+            continue
+
+    raise RuntimeError(
+        f"Gemini image bilan ishlashda xatolik: {last_error}"
+    )
+
+
+def is_image_edit_request(text: str) -> bool:
+    value = text.lower().strip()
+    keywords = (
+        "animatsion", "animation", "anime", "multfilm", "cartoon",
+        "fonini", "fonni", "background", "o'zgartir", "o‘zgartir",
+        "ozgartir", "change", "edit", "tahrir", "style", "uslub",
+        "rangini", "rangni", "kiyimini", "kiyim", "qo'sh", "qo‘sh",
+        "qosh", "olib tashla", "remove", "add", "transform", "restyle",
+        "3d", "pixar", "portretni", "suratni o'zgartir", "suratni o‘zgartir",
+    )
+    return any(k in value for k in keywords)
+
+
+def is_image_generation_request(text: str) -> bool:
+    value = text.lower().strip()
+    keywords = (
+        "rasm yarat", "rasm chiz", "surat yarat", "surat chiz",
+        "image yarat", "image generate", "generate image", "create image",
+        "draw an image", "draw a picture", "сгенерируй изображение",
+        "нарисуй", "создай изображение",
+    )
+    return any(k in value for k in keywords)
+
+
+# ============================================================
 # AI IMAGE ROUTER
 # ============================================================
 
@@ -2588,6 +2717,37 @@ async def text_handler(
     if user_text.startswith("/"):
         return
 
+    # --------------------------------------------------------
+    # TEXT -> IMAGE GENERATION
+    # --------------------------------------------------------
+    if is_image_generation_request(user_text):
+        user_message_counts[user_id] += 1
+        processing = await message.answer("🎨 Rasmni yaratmoqdaman...")
+        try:
+            loop = asyncio.get_running_loop()
+            image_bytes = await loop.run_in_executor(
+                None,
+                lambda: generate_with_gemini_image(user_text),
+            )
+            db_log_message(user_id, "image_generation", user_text, "[Rasm yaratildi]", "gemini-image")
+            await processing.delete()
+            await message.answer_photo(
+                types.BufferedInputFile(image_bytes, filename="khidirov_ai.png"),
+                caption="🎨 Tayyor!",
+            )
+            return
+        except Exception as error:
+            logger.exception("Image generation error")
+            try:
+                db_log_error(user_id, get_error_type(error), str(error), "gemini-image")
+            except Exception:
+                pass
+            await processing.edit_text(
+                "⚠️ Rasm yaratishda texnik muammo yuz berdi.\n\n"
+                "Model yoki bepul API limiti sabab bo‘lishi mumkin."
+            )
+            return
+
     user_message_counts[
         user_id
     ] += 1
@@ -2694,7 +2854,7 @@ async def photo_handler(
     ] += 1
 
     processing = await message.answer(
-        "🖼 Rasmni sinchiklab tahlil qilyapman..."
+        "🖼 Rasmni tushunyapman..."
     )
 
     try:
@@ -2751,6 +2911,38 @@ Javobni foydalanuvchining asosiy tilida bering.
 
         loop = asyncio.get_running_loop()
 
+        # Caption rasmni o‘zgartirishni so‘rasa — haqiqiy image editing.
+        if message.caption and is_image_edit_request(message.caption):
+            edit_prompt = (
+                "Edit the provided image according to the user's instruction. "
+                "Preserve the main subject's identity and composition unless the user asks otherwise. "
+                "Make the requested visual change clearly visible. User instruction: "
+                + message.caption.strip()
+            )
+            result_bytes = await loop.run_in_executor(
+                None,
+                lambda: generate_with_gemini_image(edit_prompt, image_bytes),
+            )
+
+            try:
+                db_log_message(
+                    user_id,
+                    "image_edit",
+                    message.caption.strip(),
+                    "[Rasm tahrirlandi]",
+                    "gemini-image",
+                )
+            except Exception:
+                logger.exception("Database image edit log error")
+
+            await processing.delete()
+            await message.answer_photo(
+                types.BufferedInputFile(result_bytes, filename="khidirov_ai_edited.png"),
+                caption="✨ Tayyor! Rasm tahrirlandi.",
+            )
+            return
+
+        # Oddiy caption yoki captionsiz rasm — vision tahlili.
         answer = await loop.run_in_executor(
             None,
             lambda: generate_with_image_router(
@@ -2948,6 +3140,11 @@ async def main():
     logger.info(
         "Gemini model: %s",
         MODEL_NAME,
+    )
+
+    logger.info(
+        "Gemini image model: %s",
+        IMAGE_MODEL,
     )
 
     logger.info(
