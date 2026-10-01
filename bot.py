@@ -2282,109 +2282,280 @@ async def errors_handler(message: types.Message):
 
 
 # ============================================================
-# USERS
+# PROFESSIONAL ADMIN PANEL — PHASE 2
 # ============================================================
 
-@dp.message(
-    Command("users")
-)
-async def users_handler(
-    message: types.Message,
-):
+def db_admin_overview() -> dict[str, int]:
+    """Persistent overview; survives bot restarts."""
+    with closing(db_connect()) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM users) AS users,
+                (SELECT COUNT(*) FROM messages) AS messages,
+                (SELECT COUNT(*) FROM messages WHERE message_type='text') AS texts,
+                (SELECT COUNT(*) FROM messages WHERE message_type='photo') AS photos,
+                (SELECT COUNT(*) FROM messages WHERE message_type='voice') AS voices,
+                (SELECT COUNT(*) FROM errors) AS errors,
+                (SELECT COUNT(*) FROM users WHERE date(last_seen)=date('now')) AS active_today,
+                (SELECT COUNT(*) FROM messages WHERE date(created_at)=date('now')) AS messages_today,
+                (SELECT COUNT(*) FROM errors WHERE date(created_at)=date('now')) AS errors_today
+            """
+        ).fetchone()
+        return dict(row)
 
-    if not message.from_user:
+
+def db_top_users(limit: int = 10) -> list[sqlite3.Row]:
+    with closing(db_connect()) as conn:
+        return conn.execute(
+            """
+            SELECT
+                u.user_id, u.name, u.username, u.first_seen, u.last_seen,
+                COUNT(m.id) AS total_messages,
+                SUM(CASE WHEN m.message_type='text' THEN 1 ELSE 0 END) AS texts,
+                SUM(CASE WHEN m.message_type='photo' THEN 1 ELSE 0 END) AS photos,
+                SUM(CASE WHEN m.message_type='voice' THEN 1 ELSE 0 END) AS voices
+            FROM users u
+            LEFT JOIN messages m ON m.user_id=u.user_id
+            GROUP BY u.user_id
+            ORDER BY total_messages DESC, u.last_seen DESC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 50)),),
+        ).fetchall()
+
+
+def db_user_detail(user_id: int) -> tuple[sqlite3.Row | None, list[sqlite3.Row]]:
+    with closing(db_connect()) as conn:
+        user = conn.execute(
+            "SELECT * FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        messages = conn.execute(
+            """
+            SELECT id, message_type, user_text, assistant_text, provider, created_at
+            FROM messages
+            WHERE user_id=?
+            ORDER BY id DESC
+            LIMIT 20
+            """,
+            (user_id,),
+        ).fetchall()
+        return user, messages
+
+
+def db_today_by_type() -> list[sqlite3.Row]:
+    with closing(db_connect()) as conn:
+        return conn.execute(
+            """
+            SELECT message_type, COUNT(*) AS count
+            FROM messages
+            WHERE date(created_at)=date('now')
+            GROUP BY message_type
+            ORDER BY count DESC
+            """
+        ).fetchall()
+
+
+def db_recent_users(limit: int = 20) -> list[sqlite3.Row]:
+    with closing(db_connect()) as conn:
+        return conn.execute(
+            """
+            SELECT user_id, name, username, first_seen, last_seen
+            FROM users
+            ORDER BY last_seen DESC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 50)),),
+        ).fetchall()
+
+
+# ============================================================
+# ADMIN GUARD
+# ============================================================
+
+def admin_only(message: types.Message) -> bool:
+    return bool(message.from_user and is_admin(message.from_user.id))
+
+
+@dp.message(Command("admin"))
+async def admin_handler(message: types.Message):
+    if not admin_only(message):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
         return
 
-    if not is_admin(
-        message.from_user.id
-    ):
-
+    try:
+        s = db_admin_overview()
         await message.answer(
-            "⛔ Bu buyruq faqat administrator uchun."
+            "🔐 PROFESSIONAL ADMIN PANEL\n\n"
+            f"👥 Jami foydalanuvchilar: {s['users']}\n"
+            f"🟢 Bugun faol: {s['active_today']}\n\n"
+            f"💬 Jami matn: {s['texts']}\n"
+            f"🖼 Jami rasm: {s['photos']}\n"
+            f"🎙 Jami ovoz: {s['voices']}\n"
+            f"🧾 Jami qayd: {s['messages']}\n"
+            f"⚠️ Jami xato: {s['errors']}\n\n"
+            "📅 BUGUN\n"
+            f"💬 Xabarlar: {s['messages_today']}\n"
+            f"⚠️ Xatolar: {s['errors_today']}\n\n"
+            "Buyruqlar:\n"
+            "/stats — umumiy statistika\n"
+            "/questions — so‘nggi savollar\n"
+            "/users — faol foydalanuvchilar\n"
+            "/errors — texnik xatolar\n"
+            "/user ID — bitta foydalanuvchi tarixi"
         )
+    except Exception:
+        logger.exception("Admin panel error")
+        await message.answer("⚠️ Admin panelni olishda xatolik yuz berdi.")
 
+
+@dp.message(Command("stats"))
+async def stats_handler(message: types.Message):
+    if not admin_only(message):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
         return
-
-    total_users = len(users)
-
-    total_messages = sum(
-        user_message_counts.values()
-    )
-
-    total_photos = sum(
-        user_photo_counts.values()
-    )
-
-    total_voice = sum(
-        user_voice_counts.values()
-    )
-
-    lines = [
-        "🔐 ADMIN PANEL",
-        "",
-        f"👥 Jami foydalanuvchilar: {total_users}",
-        f"💬 Matn xabarlari: {total_messages}",
-        f"🖼 Rasmlar: {total_photos}",
-        f"🎙 Ovozli xabarlar: {total_voice}",
-        "",
-        "━━━━━━━━━━━━━━━━",
-        "👥 FOYDALANUVCHILAR:",
-        "",
-    ]
-
-    sorted_users = sorted(
-        users.values(),
-        key=lambda user: (
-            user_message_counts.get(
-                user["id"],
-                0,
-            )
-            + user_photo_counts.get(
-                user["id"],
-                0,
-            )
-            + user_voice_counts.get(
-                user["id"],
-                0,
-            )
-        ),
-        reverse=True,
-    )
-
-    for number, user in enumerate(
-        sorted_users[:50],
-        start=1,
-    ):
-
-        user_id = user["id"]
-
-        username = user["username"]
-
-        username_text = (
-            f"@{username}"
-            if username
-            else "username yo'q"
+    try:
+        s = db_admin_overview()
+        type_rows = db_today_by_type()
+        today_map = {row["message_type"]: row["count"] for row in type_rows}
+        await message.answer(
+            "📊 BOT STATISTIKASI\n\n"
+            f"👥 Foydalanuvchilar: {s['users']}\n"
+            f"🟢 Bugun faol: {s['active_today']}\n"
+            f"💬 Matn savollari: {s['texts']}\n"
+            f"🖼 Rasm xabarlari: {s['photos']}\n"
+            f"🎙 Ovozli xabarlar: {s['voices']}\n"
+            f"🧾 Jami qaydlar: {s['messages']}\n"
+            f"⚠️ Xatolar: {s['errors']}\n\n"
+            "📅 BUGUN\n"
+            f"💬 {today_map.get('text', 0)} ta matn\n"
+            f"🖼 {today_map.get('photo', 0)} ta rasm\n"
+            f"🎙 {today_map.get('voice', 0)} ta ovoz\n"
+            f"⚠️ {s['errors_today']} ta xato"
         )
+    except Exception:
+        logger.exception("Stats command error")
+        await message.answer("⚠️ Statistikani olishda xatolik yuz berdi.")
 
-        lines.append(
-            f"{number}. {user['name']}\n"
-            f"   ├ ID: {user_id}\n"
-            f"   ├ {username_text}\n"
-            f"   ├ 💬 {user_message_counts.get(user_id, 0)} ta\n"
-            f"   ├ 🖼 {user_photo_counts.get(user_id, 0)} ta\n"
-            f"   └ 🎙 {user_voice_counts.get(user_id, 0)} ta"
-        )
 
-    if not users:
+@dp.message(Command("questions"))
+async def questions_handler(message: types.Message):
+    if not admin_only(message):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
+        return
+    try:
+        rows = db_recent_questions(30)
+        if not rows:
+            await message.answer("📭 Hali saqlangan savollar yo‘q.")
+            return
+        lines = ["🔎 SO‘NGGI FOYDALANUVCHI SAVOLLARI", ""]
+        for i, row in enumerate(rows, 1):
+            name = row["name"] or "Noma’lum"
+            username = f"@{row['username']}" if row["username"] else "username yo‘q"
+            question = (row["user_text"] or "").replace("\n", " ").strip()
+            if len(question) > 450:
+                question = question[:450] + "…"
+            lines.append(
+                f"{i}. {name} ({username})\n"
+                f"   ID: {row['user_id']} | {row['created_at']}\n"
+                f"   ❓ {question}"
+            )
+        await send_long_message(message, "\n\n".join(lines))
+    except Exception:
+        logger.exception("Questions command error")
+        await message.answer("⚠️ Savollarni olishda xatolik yuz berdi.")
 
-        lines.append(
-            "Hozircha foydalanuvchilar yo'q."
-        )
 
-    await send_long_message(
-        message,
-        "\n".join(lines),
-    )
+@dp.message(Command("users"))
+async def users_handler(message: types.Message):
+    if not admin_only(message):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
+        return
+    try:
+        rows = db_top_users(20)
+        if not rows:
+            await message.answer("👥 Hali foydalanuvchilar yo‘q.")
+            return
+        lines = ["👥 ENG FAOL FOYDALANUVCHILAR", ""]
+        for i, row in enumerate(rows, 1):
+            username = f"@{row['username']}" if row["username"] else "username yo‘q"
+            lines.append(
+                f"{i}. {row['name']} ({username})\n"
+                f"   ID: {row['user_id']}\n"
+                f"   💬 {row['texts'] or 0} | 🖼 {row['photos'] or 0} | 🎙 {row['voices'] or 0}\n"
+                f"   🧾 Jami: {row['total_messages']} | 🕒 {row['last_seen']}"
+            )
+        await send_long_message(message, "\n\n".join(lines))
+    except Exception:
+        logger.exception("Users command error")
+        await message.answer("⚠️ Foydalanuvchilarni olishda xatolik yuz berdi.")
+
+
+@dp.message(Command("user"))
+async def user_detail_handler(message: types.Message):
+    if not admin_only(message):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) != 2 or not parts[1].isdigit():
+        await message.answer("Foydalanish: /user 123456789")
+        return
+    user_id = int(parts[1])
+    try:
+        user, rows = db_user_detail(user_id)
+        if not user:
+            await message.answer("❌ Bu ID bo‘yicha foydalanuvchi topilmadi.")
+            return
+        username = f"@{user['username']}" if user['username'] else "username yo‘q"
+        lines = [
+            "👤 FOYDALANUVCHI",
+            "",
+            f"Ism: {user['name']}",
+            f"Username: {username}",
+            f"ID: {user['user_id']}",
+            f"Birinchi kirish: {user['first_seen']}",
+            f"Oxirgi faollik: {user['last_seen']}",
+            "",
+            "🧾 SO‘NGGI 20 QAYD:",
+        ]
+        for row in rows:
+            text_value = (row['user_text'] or '[media]').replace("\n", " ").strip()
+            if len(text_value) > 300:
+                text_value = text_value[:300] + "…"
+            lines.append(
+                f"\n{row['created_at']} | {row['message_type']}\n"
+                f"❓ {text_value}"
+            )
+        await send_long_message(message, "\n".join(lines))
+    except Exception:
+        logger.exception("User detail error")
+        await message.answer("⚠️ Foydalanuvchi ma’lumotlarini olishda xatolik yuz berdi.")
+
+
+@dp.message(Command("errors"))
+async def errors_handler(message: types.Message):
+    if not admin_only(message):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
+        return
+    try:
+        rows = db_recent_errors(20)
+        if not rows:
+            await message.answer("✅ Hali qayd etilgan xatolar yo‘q.")
+            return
+        lines = ["⚠️ SO‘NGGI XATOLAR", ""]
+        for i, row in enumerate(rows, 1):
+            err = (row["error_text"] or "").replace("\n", " ").strip()
+            if len(err) > 350:
+                err = err[:350] + "…"
+            lines.append(
+                f"{i}. {row['created_at']} | {row['error_type']} | {row['provider'] or '-'}\n"
+                f"   ID: {row['user_id'] or '-'}\n"
+                f"   {err}"
+            )
+        await send_long_message(message, "\n\n".join(lines))
+    except Exception:
+        logger.exception("Errors command error")
+        await message.answer("⚠️ Xatolarni olishda xatolik yuz berdi.")
 
 
 # ============================================================
