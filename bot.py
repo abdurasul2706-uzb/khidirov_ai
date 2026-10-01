@@ -5,6 +5,8 @@ import os
 import random
 import re
 import time
+import sqlite3
+from contextlib import closing
 
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -625,6 +627,203 @@ def detect_language_hint(
     return "AUTO"
 
 
+
+# ============================================================
+# PERSISTENT DATABASE — PHASE 1
+# ============================================================
+
+DATABASE_PATH = os.getenv(
+    "DATABASE_PATH",
+    "bot_data.sqlite3",
+).strip() or "bot_data.sqlite3"
+
+
+def db_connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(
+        DATABASE_PATH,
+        timeout=10,
+        check_same_thread=False,
+    )
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def init_database() -> None:
+    with closing(db_connect()) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT '',
+                username TEXT NOT NULL DEFAULT '',
+                first_seen TEXT NOT NULL,
+                last_seen TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                message_type TEXT NOT NULL,
+                user_text TEXT NOT NULL DEFAULT '',
+                assistant_text TEXT NOT NULL DEFAULT '',
+                provider TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS errors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                error_type TEXT NOT NULL DEFAULT 'unknown',
+                provider TEXT NOT NULL DEFAULT '',
+                error_text TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_messages_user_time
+                ON messages(user_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_messages_time
+                ON messages(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_errors_time
+                ON errors(created_at DESC);
+            """
+        )
+        conn.commit()
+
+
+def db_register_user(user: types.User) -> None:
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    with closing(db_connect()) as conn:
+        conn.execute(
+            """
+            INSERT INTO users(user_id, name, username, first_seen, last_seen)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                name=excluded.name,
+                username=excluded.username,
+                last_seen=excluded.last_seen
+            """,
+            (
+                user.id,
+                user.full_name or "Noma'lum",
+                user.username or "",
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+
+
+def db_log_message(
+    user_id: int,
+    message_type: str,
+    user_text: str = "",
+    assistant_text: str = "",
+    provider: str = "",
+) -> None:
+    with closing(db_connect()) as conn:
+        conn.execute(
+            """
+            INSERT INTO messages(
+                user_id, message_type, user_text,
+                assistant_text, provider, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                message_type,
+                user_text[:12000],
+                assistant_text[:20000],
+                provider[:100],
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+
+
+def db_log_error(
+    user_id: int | None,
+    error_type: str,
+    error_text: str,
+    provider: str = "",
+) -> None:
+    with closing(db_connect()) as conn:
+        conn.execute(
+            """
+            INSERT INTO errors(
+                user_id, error_type, provider, error_text, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                error_type[:50],
+                provider[:100],
+                error_text[:5000],
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+
+
+def db_stats() -> dict[str, int]:
+    with closing(db_connect()) as conn:
+        users_count = conn.execute(
+            "SELECT COUNT(*) FROM users"
+        ).fetchone()[0]
+        messages_count = conn.execute(
+            "SELECT COUNT(*) FROM messages"
+        ).fetchone()[0]
+        photos_count = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE message_type='photo'"
+        ).fetchone()[0]
+        voices_count = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE message_type='voice'"
+        ).fetchone()[0]
+        errors_count = conn.execute(
+            "SELECT COUNT(*) FROM errors"
+        ).fetchone()[0]
+        return {
+            "users": users_count,
+            "messages": messages_count,
+            "photos": photos_count,
+            "voices": voices_count,
+            "errors": errors_count,
+        }
+
+
+def db_recent_questions(limit: int = 20) -> list[sqlite3.Row]:
+    with closing(db_connect()) as conn:
+        return conn.execute(
+            """
+            SELECT m.id, m.user_id, u.name, u.username,
+                   m.message_type, m.user_text, m.created_at
+            FROM messages m
+            LEFT JOIN users u ON u.user_id = m.user_id
+            WHERE m.user_text <> ''
+            ORDER BY m.id DESC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 100)),),
+        ).fetchall()
+
+
+def db_recent_errors(limit: int = 15) -> list[sqlite3.Row]:
+    with closing(db_connect()) as conn:
+        return conn.execute(
+            """
+            SELECT id, user_id, error_type, provider,
+                   error_text, created_at
+            FROM errors
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 100)),),
+        ).fetchall()
+
+
+# ============================================================
 # ============================================================
 # USER MEMORY
 # ============================================================
@@ -805,6 +1004,12 @@ def register_user(
         )
 
         users[user_id]["last_seen"] = now
+
+
+    try:
+        db_register_user(user)
+    except Exception:
+        logger.exception("Database user registration error")
 
 
 # ============================================================
@@ -1991,6 +2196,91 @@ async def reset_handler(
     )
 
 
+
+# ============================================================
+# QUESTIONS / STATS / ERRORS
+# ============================================================
+
+@dp.message(Command("stats"))
+async def stats_handler(message: types.Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
+        return
+
+    try:
+        stats = db_stats()
+        await message.answer(
+            "📊 BOT STATISTIKASI\n\n"
+            f"👥 Foydalanuvchilar: {stats['users']}\n"
+            f"💬 Matn savollari: {stats['messages'] - stats['photos'] - stats['voices']}\n"
+            f"🖼 Rasm xabarlari: {stats['photos']}\n"
+            f"🎙 Ovozli xabarlar: {stats['voices']}\n"
+            f"🧾 Jami qaydlar: {stats['messages']}\n"
+            f"⚠️ Xatolar: {stats['errors']}"
+        )
+    except Exception:
+        logger.exception("Stats command error")
+        await message.answer("⚠️ Statistikani olishda xatolik yuz berdi.")
+
+
+@dp.message(Command("questions"))
+async def questions_handler(message: types.Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
+        return
+
+    try:
+        rows = db_recent_questions(20)
+        if not rows:
+            await message.answer("📭 Hali saqlangan savollar yo'q.")
+            return
+
+        lines = ["🔎 SO'NGGI FOYDALANUVCHI SAVOLLARI", ""]
+        for i, row in enumerate(rows, 1):
+            name = row["name"] or "Noma'lum"
+            username = f"@{row['username']}" if row["username"] else "username yo'q"
+            question = (row["user_text"] or "").replace("\n", " ").strip()
+            if len(question) > 500:
+                question = question[:500] + "…"
+            lines.append(
+                f"{i}. {name} ({username})\n"
+                f"   ID: {row['user_id']} | {row['created_at']}\n"
+                f"   ❓ {question}"
+            )
+        await send_long_message(message, "\n\n".join(lines))
+    except Exception:
+        logger.exception("Questions command error")
+        await message.answer("⚠️ Savollarni olishda xatolik yuz berdi.")
+
+
+@dp.message(Command("errors"))
+async def errors_handler(message: types.Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        await message.answer("⛔ Bu buyruq faqat administrator uchun.")
+        return
+
+    try:
+        rows = db_recent_errors(15)
+        if not rows:
+            await message.answer("✅ Hali qayd etilgan xatolar yo'q.")
+            return
+
+        lines = ["⚠️ SO'NGGI XATOLAR", ""]
+        for i, row in enumerate(rows, 1):
+            err = (row["error_text"] or "").replace("\n", " ").strip()
+            if len(err) > 350:
+                err = err[:350] + "…"
+            lines.append(
+                f"{i}. {row['created_at']} | {row['error_type']} | {row['provider']}\n"
+                f"   ID: {row['user_id'] or '-'}\n"
+                f"   {err}"
+            )
+        await send_long_message(message, "\n\n".join(lines))
+    except Exception:
+        logger.exception("Errors command error")
+        await message.answer("⚠️ Xatolarni olishda xatolik yuz berdi.")
+
+
 # ============================================================
 # USERS
 # ============================================================
@@ -2164,6 +2454,17 @@ async def text_handler(
         )
 
         try:
+            db_log_message(
+                user_id,
+                "text",
+                user_text,
+                answer,
+                "router",
+            )
+        except Exception:
+            logger.exception("Database text log error")
+
+        try:
             await processing.delete()
         except Exception:
             pass
@@ -2178,6 +2479,10 @@ async def text_handler(
         logger.exception(
             "Text handler error"
         )
+        try:
+            db_log_error(user_id, get_error_type(error), str(error), "router")
+        except Exception:
+            logger.exception("Database error log failed")
 
         try:
 
@@ -2296,6 +2601,17 @@ Javobni foydalanuvchining asosiy tilida bering.
         )
 
         try:
+            db_log_message(
+                user_id,
+                "photo",
+                message.caption or "[Rasm yuborildi]",
+                answer,
+                "router",
+            )
+        except Exception:
+            logger.exception("Database photo log error")
+
+        try:
             await processing.delete()
         except Exception:
             pass
@@ -2310,6 +2626,10 @@ Javobni foydalanuvchining asosiy tilida bering.
         logger.exception(
             "Photo handler error"
         )
+        try:
+            db_log_error(user_id, get_error_type(error), str(error), "router")
+        except Exception:
+            logger.exception("Database error log failed")
 
         try:
 
@@ -2390,6 +2710,17 @@ async def voice_handler(
         )
 
         try:
+            db_log_message(
+                user_id,
+                "voice",
+                "[Ovozli xabar]",
+                answer,
+                "router",
+            )
+        except Exception:
+            logger.exception("Database voice log error")
+
+        try:
             await processing.delete()
         except Exception:
             pass
@@ -2404,6 +2735,10 @@ async def voice_handler(
         logger.exception(
             "Voice handler error"
         )
+        try:
+            db_log_error(user_id, get_error_type(error), str(error), "router")
+        except Exception:
+            logger.exception("Database error log failed")
 
         try:
 
@@ -2423,6 +2758,8 @@ async def voice_handler(
 # ============================================================
 
 async def main():
+
+    init_database()
 
     Thread(
         target=run_health_check_server,
